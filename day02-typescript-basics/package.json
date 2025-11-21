@@ -1,0 +1,20 @@
+{
+  "name": "day02-typescript-basics",
+  "version": "1.0.0",
+  "description": "Day 2 of the 100 Days Full Stack + AI Challenge – TypeScript basics project.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "typescript",
+    "learning",
+    "100-days-fullstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
