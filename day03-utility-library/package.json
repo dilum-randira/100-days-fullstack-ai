@@ -1,0 +1,21 @@
+{
+  "name": "day03-utility-library",
+  "version": "1.0.0",
+  "description": "Day 3 of the 100 Days Full Stack + AI Challenge – small reusable TypeScript utility library.",
+  "main": "dist/demo.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/demo.js",
+    "test": "node dist/demo.js"
+  },
+  "keywords": [
+    "typescript",
+    "utilities",
+    "100-days-fullstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
