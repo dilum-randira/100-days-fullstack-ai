@@ -1,0 +1,22 @@
+{
+  "name": "day05-validator-lib",
+  "version": "1.0.0",
+  "description": "Day 5 – Simple TypeScript validation library.",
+  "type": "commonjs",
+  "main": "dist/example.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/example.js"
+  },
+  "keywords": [
+    "typescript",
+    "validation",
+    "100-days-fullstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
