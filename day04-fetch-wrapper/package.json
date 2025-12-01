@@ -1,0 +1,23 @@
+{
+  "name": "day04-fetch-wrapper",
+  "version": "1.0.0",
+  "description": "Day 4 – Simple TypeScript HTTP client / fetch wrapper.",
+  "type": "commonjs",
+  "main": "dist/example.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/example.js"
+  },
+  "keywords": [
+    "typescript",
+    "fetch",
+    "http-client",
+    "100-days-fullstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
