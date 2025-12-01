@@ -1,0 +1,23 @@
+{
+  "name": "day06-ts-class",
+  "version": "1.0.0",
+  "description": "Day 6 – TypeScript OOP practice with classes, interfaces, and enums.",
+  "type": "commonjs",
+  "main": "dist/example.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/example.js"
+  },
+  "keywords": [
+    "typescript",
+    "oop",
+    "classes",
+    "100-days-fullstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
