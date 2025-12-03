@@ -1,0 +1,24 @@
+{
+  "name": "day07-algorithms",
+  "version": "1.0.0",
+  "description": "Day 7 – TypeScript algorithms practice (sorting, searching, utilities).",
+  "type": "commonjs",
+  "main": "dist/example.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/example.js"
+  },
+  "keywords": [
+    "typescript",
+    "algorithms",
+    "sorting",
+    "searching",
+    "100-days-fullstack-ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
