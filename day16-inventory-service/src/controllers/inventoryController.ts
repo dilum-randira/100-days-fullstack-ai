@@ -9,6 +9,7 @@ import {
   getLowStockItems,
 } from '../services/inventoryService';
 import { validateInventoryInput } from '../utils/validators';
+import { InventoryLog } from '../models/InventoryLog';
 
 export const createInventoryItem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -113,6 +114,23 @@ export const getLowStockInventoryItems = async (
     const items = await getLowStockItems(numericThreshold);
 
     res.status(200).json({ success: true, data: items });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getItemLogs = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    // Ensure item exists (will throw 404 if not)
+    await getItemById(id);
+
+    const logs = await InventoryLog.find({ itemId: id })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    res.status(200).json({ success: true, data: logs });
   } catch (error) {
     next(error);
   }

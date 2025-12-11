@@ -1,5 +1,6 @@
 import { InventoryItem, IInventoryItemDocument, InventoryStatus } from '../models/InventoryItem';
 import { isValidObjectId } from 'mongoose';
+import { InventoryLog } from '../models/InventoryLog';
 
 export interface InventoryFilter {
   productName?: string;
@@ -98,7 +99,8 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
   }
 
   const item = await getItemById(id);
-  const newQuantity = item.quantity + delta;
+  const oldQuantity = item.quantity;
+  const newQuantity = oldQuantity + delta;
 
   if (newQuantity < 0) {
     throw Object.assign(new Error('Quantity cannot be negative'), { statusCode: 400 });
@@ -106,6 +108,14 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
 
   item.quantity = newQuantity;
   await item.save();
+
+  await InventoryLog.create({
+    itemId: item._id,
+    delta,
+    oldQuantity,
+    newQuantity,
+  });
+
   return item;
 };
 
