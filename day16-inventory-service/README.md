@@ -273,8 +273,13 @@ curl "http://localhost:3000/api/inventory/summary?threshold=5"
 
 Returns a list of change-log entries for the specified item, ordered from newest to oldest.
 
+Query params (optional):
+
+- `page` (default: 1)
+- `limit` (default: 20)
+
 ```bash
-curl http://localhost:3000/api/inventory/<ITEM_ID>/logs
+curl "http://localhost:3000/api/inventory/<ITEM_ID>/logs?page=1&limit=20"
 ```
 
 **Response**
@@ -291,7 +296,12 @@ curl http://localhost:3000/api/inventory/<ITEM_ID>/logs
       "newQuantity": 8,
       "createdAt": "2025-12-11T10:00:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1
+  }
 }
 ```
 

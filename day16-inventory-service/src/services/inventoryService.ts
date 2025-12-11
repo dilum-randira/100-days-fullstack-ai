@@ -1,6 +1,6 @@
 import { InventoryItem, IInventoryItemDocument, InventoryStatus } from '../models/InventoryItem';
 import { isValidObjectId } from 'mongoose';
-import { InventoryLog } from '../models/InventoryLog';
+import { InventoryLog, IInventoryLogDocument } from '../models/InventoryLog';
 
 export interface InventoryFilter {
   productName?: string;
@@ -138,17 +138,14 @@ export const getInventorySummary = async (
   totalQuantity: number;
   lowStockCount: number;
 }> => {
-  // total number of inventory documents
   const totalItems = await InventoryItem.countDocuments().exec();
 
-  // aggregate total quantity across all items
   const agg = await InventoryItem.aggregate([
     { $group: { _id: null, totalQuantity: { $sum: '$quantity' } } },
   ]).exec();
 
-  const totalQuantity = (agg && agg[0] && typeof agg[0].totalQuantity === 'number') ? agg[0].totalQuantity : 0;
+  const totalQuantity = agg.length > 0 && typeof agg[0].totalQuantity === 'number' ? agg[0].totalQuantity : 0;
 
-  // count low-stock items: either use provided threshold or compare quantity < minThreshold
   let lowStockCount: number;
   if (threshold !== undefined) {
     if (typeof threshold !== 'number' || threshold < 0) {
@@ -159,9 +156,26 @@ export const getInventorySummary = async (
     lowStockCount = await InventoryItem.countDocuments({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
   }
 
-  return {
-    totalItems,
-    totalQuantity,
-    lowStockCount,
-  };
+  return { totalItems, totalQuantity, lowStockCount };
+};
+
+export const getLogsForItem = async (
+  itemId: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<{ logs: IInventoryLogDocument[]; total: number; page: number; limit: number }> => {
+  if (!isValidObjectId(itemId)) {
+    throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
+  }
+
+  const safePage = page > 0 ? page : 1;
+  const safeLimit = limit > 0 ? limit : 20;
+  const skip = (safePage - 1) * safeLimit;
+
+  const [logs, total] = await Promise.all([
+    InventoryLog.find({ itemId }).sort({ createdAt: -1 }).skip(skip).limit(safeLimit).exec(),
+    InventoryLog.countDocuments({ itemId }).exec(),
+  ]);
+
+  return { logs, total, page: safePage, limit: safeLimit };
 };

@@ -7,6 +7,8 @@ import {
   listItems,
   adjustQuantity,
   getLowStockItems,
+  getInventorySummary,
+  getLogsForItem,
 } from '../services/inventoryService';
 import { validateInventoryInput } from '../utils/validators';
 import { InventoryLog } from '../models/InventoryLog';
@@ -119,18 +121,42 @@ export const getLowStockInventoryItems = async (
   }
 };
 
-export const getItemLogs = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getInventorySummaryHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const threshold = req.query.threshold ? Number(req.query.threshold) : undefined;
+    const summary = await getInventorySummary(threshold);
+
+    res.status(200).json({ success: true, data: summary });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getItemLogsHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
     const { id } = req.params;
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
 
-    // Ensure item exists (will throw 404 if not)
-    await getItemById(id);
+    const result = await getLogsForItem(id, page, limit);
 
-    const logs = await InventoryLog.find({ itemId: id })
-      .sort({ createdAt: -1 })
-      .exec();
-
-    res.status(200).json({ success: true, data: logs });
+    res.status(200).json({
+      success: true,
+      data: result.logs,
+      pagination: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+      },
+    });
   } catch (error) {
     next(error);
   }
