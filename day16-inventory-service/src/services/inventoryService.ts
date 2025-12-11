@@ -120,3 +120,38 @@ export const getLowStockItems = async (threshold?: number): Promise<IInventoryIt
 
   return InventoryItem.find({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
 };
+
+export const getInventorySummary = async (
+  threshold?: number
+): Promise<{
+  totalItems: number;
+  totalQuantity: number;
+  lowStockCount: number;
+}> => {
+  // total number of inventory documents
+  const totalItems = await InventoryItem.countDocuments().exec();
+
+  // aggregate total quantity across all items
+  const agg = await InventoryItem.aggregate([
+    { $group: { _id: null, totalQuantity: { $sum: '$quantity' } } },
+  ]).exec();
+
+  const totalQuantity = (agg && agg[0] && typeof agg[0].totalQuantity === 'number') ? agg[0].totalQuantity : 0;
+
+  // count low-stock items: either use provided threshold or compare quantity < minThreshold
+  let lowStockCount: number;
+  if (threshold !== undefined) {
+    if (typeof threshold !== 'number' || threshold < 0) {
+      throw Object.assign(new Error('Threshold must be a non-negative number'), { statusCode: 400 });
+    }
+    lowStockCount = await InventoryItem.countDocuments({ quantity: { $lt: threshold } }).exec();
+  } else {
+    lowStockCount = await InventoryItem.countDocuments({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
+  }
+
+  return {
+    totalItems,
+    totalQuantity,
+    lowStockCount,
+  };
+};
