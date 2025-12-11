@@ -10,6 +10,8 @@ This service manages inventory items with support for:
 - Listing items with filters and pagination
 - Adjusting quantity of items (with negative quantities prevented)
 - Fetching low-stock items based on thresholds
+- Getting a quick inventory summary (total items, total quantity, low-stock count)
+- Viewing change logs for a specific inventory item
 
 ## 📁 Project Structure
 
@@ -237,6 +239,59 @@ curl "http://localhost:3000/api/inventory/low-stock?threshold=10"
 {
   "success": true,
   "data": [ ...lowStockItems... ]
+}
+```
+
+### 8. Inventory Summary
+
+**GET** `/api/inventory/summary`
+
+Optional query:
+
+- `threshold` – used to compute `lowStockCount` instead of per-item `minThreshold`
+
+```bash
+curl "http://localhost:3000/api/inventory/summary?threshold=5"
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "totalItems": 42,
+    "totalQuantity": 380,
+    "lowStockCount": 7
+  }
+}
+```
+
+### 9. Item Change Logs
+
+**GET** `/api/inventory/:id/logs`
+
+Returns a list of change-log entries for the specified item, ordered from newest to oldest.
+
+```bash
+curl http://localhost:3000/api/inventory/<ITEM_ID>/logs
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "...",
+      "itemId": "<ITEM_ID>",
+      "delta": -2,
+      "oldQuantity": 10,
+      "newQuantity": 8,
+      "createdAt": "2025-12-11T10:00:00.000Z"
+    }
+  ]
 }
 ```
 
