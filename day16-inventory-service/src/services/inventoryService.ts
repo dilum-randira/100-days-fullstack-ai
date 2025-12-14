@@ -1,6 +1,58 @@
 import { InventoryItem, IInventoryItemDocument, InventoryStatus } from '../models/InventoryItem';
 import { isValidObjectId } from 'mongoose';
 import { InventoryLog, IInventoryLogDocument } from '../models/InventoryLog';
+import { redisClient } from '../utils/redis';
+import { logger } from '../utils/logger';
+
+const CACHE_TTL_SECONDS = 60;
+
+const buildCacheKey = (endpoint: string, params?: Record<string, unknown>): string => {
+  const base = `inventory:${endpoint}`;
+  if (!params || Object.keys(params).length === 0) return base;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(params).sort()) {
+    sorted[key] = params[key];
+  }
+  return `${base}:${JSON.stringify(sorted)}`;
+};
+
+const safeGetCache = async <T>(key: string): Promise<T | null> => {
+  if (!redisClient) return null;
+  try {
+    const raw = await redisClient.get(key);
+    if (!raw) {
+      logger.debug?.('cache.miss', { key });
+      return null;
+    }
+    logger.debug?.('cache.hit', { key });
+    return JSON.parse(raw) as T;
+  } catch (err: any) {
+    logger.error('cache.get.error', { key, message: err.message });
+    return null;
+  }
+};
+
+const safeSetCache = async (key: string, value: unknown): Promise<void> => {
+  if (!redisClient) return;
+  try {
+    await redisClient.set(key, JSON.stringify(value), 'EX', CACHE_TTL_SECONDS);
+  } catch (err: any) {
+    logger.error('cache.set.error', { key, message: err.message });
+  }
+};
+
+const clearInventoryCache = async (): Promise<void> => {
+  if (!redisClient) return;
+  try {
+    const keys = await redisClient.keys('inventory:*');
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+      logger.info('cache.clear.inventory', { count: keys.length });
+    }
+  } catch (err: any) {
+    logger.error('cache.clear.error', { message: err.message });
+  }
+};
 
 export interface InventoryFilter {
   productName?: string;
@@ -19,6 +71,7 @@ const DEFAULT_LIMIT = 20;
 export const createItem = async (data: Partial<IInventoryItemDocument>): Promise<IInventoryItemDocument> => {
   const item = new InventoryItem(data);
   await item.save();
+  await clearInventoryCache();
   return item;
 };
 
@@ -36,7 +89,7 @@ export const getItemById = async (id: string): Promise<IInventoryItemDocument> =
 
 export const updateItem = async (
   id: string,
-  updates: Partial<IInventoryItemDocument>
+  updates: Partial<IInventoryItemDocument>,
 ): Promise<IInventoryItemDocument> => {
   if (!isValidObjectId(id)) {
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
@@ -51,6 +104,7 @@ export const updateItem = async (
     throw Object.assign(new Error('Item not found'), { statusCode: 404 });
   }
 
+  await clearInventoryCache();
   return item;
 };
 
@@ -63,11 +117,12 @@ export const deleteItem = async (id: string): Promise<void> => {
   if (!result) {
     throw Object.assign(new Error('Item not found'), { statusCode: 404 });
   }
+  await clearInventoryCache();
 };
 
 export const listItems = async (
   filter: InventoryFilter,
-  pagination: PaginationQuery
+  pagination: PaginationQuery,
 ): Promise<{ items: IInventoryItemDocument[]; total: number; page: number; limit: number }> => {
   const page = pagination.page && pagination.page > 0 ? pagination.page : DEFAULT_PAGE;
   const limit = pagination.limit && pagination.limit > 0 ? pagination.limit : DEFAULT_LIMIT;
@@ -116,6 +171,7 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
     newQuantity,
   });
 
+  await clearInventoryCache();
   return item;
 };
 
@@ -132,12 +188,20 @@ export const getLowStockItems = async (threshold?: number): Promise<IInventoryIt
 };
 
 export const getInventorySummary = async (
-  threshold?: number
+  threshold?: number,
 ): Promise<{
   totalItems: number;
   totalQuantity: number;
   lowStockCount: number;
 }> => {
+  const key = buildCacheKey('summary', { threshold });
+  const cached = await safeGetCache<{
+    totalItems: number;
+    totalQuantity: number;
+    lowStockCount: number;
+  }>(key);
+  if (cached) return cached;
+
   const totalItems = await InventoryItem.countDocuments().exec();
 
   const agg = await InventoryItem.aggregate([
@@ -156,13 +220,41 @@ export const getInventorySummary = async (
     lowStockCount = await InventoryItem.countDocuments({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
   }
 
-  return { totalItems, totalQuantity, lowStockCount };
+  const result = { totalItems, totalQuantity, lowStockCount };
+  await safeSetCache(key, result);
+  return result;
+};
+
+export const getInventoryStats = async (): Promise<unknown> => {
+  const key = buildCacheKey('stats');
+  const cached = await safeGetCache<unknown>(key);
+  if (cached) return cached;
+
+  // implement your stats aggregation here
+  const stats = await InventoryItem.aggregate([
+    { $group: { _id: '$location', quantity: { $sum: '$quantity' } } },
+  ]).exec();
+
+  const shaped = stats.map((row) => ({ location: row._id, quantity: row.quantity }));
+  await safeSetCache(key, shaped);
+  return shaped;
+};
+
+export const getTopInventory = async (limit: number = 10): Promise<IInventoryItemDocument[]> => {
+  const safeLimit = limit > 0 ? limit : 10;
+  const key = buildCacheKey('top', { limit: safeLimit });
+  const cached = await safeGetCache<IInventoryItemDocument[]>(key);
+  if (cached) return cached;
+
+  const items = await InventoryItem.find().sort({ quantity: -1 }).limit(safeLimit).exec();
+  await safeSetCache(key, items);
+  return items;
 };
 
 export const getLogsForItem = async (
   itemId: string,
   page: number = 1,
-  limit: number = 20
+  limit: number = 20,
 ): Promise<{ logs: IInventoryLogDocument[]; total: number; page: number; limit: number }> => {
   if (!isValidObjectId(itemId)) {
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });

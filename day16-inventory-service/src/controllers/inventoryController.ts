@@ -8,6 +8,8 @@ import {
   adjustQuantity,
   getLowStockItems,
   getInventorySummary,
+  getInventoryStats,
+  getTopInventory,
   getLogsForItem,
 } from '../services/inventoryService';
 import { validateInventoryInput } from '../utils/validators';
@@ -130,9 +132,28 @@ export const getInventorySummaryHandler = async (
     const threshold = req.query.threshold ? Number(req.query.threshold) : undefined;
     const summary = await getInventorySummary(threshold);
 
-    res.status(200).json({ success: true, data: summary });
-  } catch (error) {
-    next(error);
+    res.json({ success: true, data: summary });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getInventoryStatsHandler = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const stats = await getInventoryStats();
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getTopInventoryHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 10;
+    const items = await getTopInventory(limit);
+    res.json({ success: true, data: items });
+  } catch (err) {
+    next(err);
   }
 };
 

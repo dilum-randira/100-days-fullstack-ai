@@ -8,6 +8,8 @@ import {
   adjustInventoryQuantity,
   getLowStockInventoryItems,
   getInventorySummaryHandler,
+  getInventoryStatsHandler,
+  getTopInventoryHandler,
   getItemLogsHandler,
 } from '../controllers/inventoryController';
 
@@ -17,6 +19,8 @@ router.post('/', createInventoryItem);
 router.get('/', listInventoryItems);
 router.get('/low-stock', getLowStockInventoryItems);
 router.get('/summary', getInventorySummaryHandler);
+router.get('/stats', getInventoryStatsHandler);
+router.get('/top', getTopInventoryHandler);
 router.get('/:id/logs', getItemLogsHandler);
 router.get('/:id', getInventoryItem);
 router.put('/:id', updateInventoryItem);
