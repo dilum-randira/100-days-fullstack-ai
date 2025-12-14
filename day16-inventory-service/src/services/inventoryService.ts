@@ -3,6 +3,7 @@ import { isValidObjectId } from 'mongoose';
 import { InventoryLog, IInventoryLogDocument } from '../models/InventoryLog';
 import { redisClient } from '../utils/redis';
 import { logger } from '../utils/logger';
+import { enqueueInventoryJobs } from '../queues/inventoryQueue';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -172,6 +173,13 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
   });
 
   await clearInventoryCache();
+
+  await enqueueInventoryJobs([
+    { name: 'recalculate-analytics', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
+    { name: 'send-low-stock-alerts', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
+    { name: 'archive-old-logs', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
+  ]);
+
   return item;
 };
 
@@ -270,4 +278,12 @@ export const getLogsForItem = async (
   ]);
 
   return { logs, total, page: safePage, limit: safeLimit };
+};
+
+export const triggerInventoryBackgroundJobs = async (trigger: 'quantity-adjusted' | 'batch-consumed' | 'qc-passed', itemId?: string): Promise<void> => {
+  await enqueueInventoryJobs([
+    { name: 'recalculate-analytics', data: { itemId, trigger } },
+    { name: 'send-low-stock-alerts', data: { itemId, trigger } },
+    { name: 'archive-old-logs', data: { itemId, trigger } },
+  ]);
 };
