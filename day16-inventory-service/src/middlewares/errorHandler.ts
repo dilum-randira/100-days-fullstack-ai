@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger';
 
 export const errorHandler = (
   err: unknown,
-  _req: Request,
+  req: Request & { requestId?: string },
   res: Response,
-  _next: NextFunction
+  _next: NextFunction,
 ): void => {
-  console.error('Error:', err);
+  const requestId = req.requestId;
 
   let statusCode = 500;
   let message = 'Internal Server Error';
@@ -16,8 +17,17 @@ export const errorHandler = (
     statusCode = (err as any).statusCode || 500;
   }
 
+  logger.error('Request error', {
+    requestId,
+    path: req.path,
+    method: req.method,
+    statusCode,
+    message,
+  });
+
   res.status(statusCode).json({
     success: false,
     error: message,
+    requestId,
   });
 };
