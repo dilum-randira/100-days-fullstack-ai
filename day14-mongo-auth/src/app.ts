@@ -9,6 +9,8 @@ import { errorHandler } from './middleware/errorHandler';
 import { httpLoggerStream } from './utils/logger';
 import { randomUUID } from 'crypto';
 import mongoose from 'mongoose';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './docs/swagger';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -58,12 +60,10 @@ app.use(
 app.get('/', (_req: Request, res: Response) => {
   res.json({
     message: 'Day 14 - Mongo Auth API',
-    endpoints: {
-      register: '/api/auth/register',
-      login: '/api/auth/login',
-      refresh: '/api/auth/refresh',
-      logout: '/api/auth/logout',
-      secret: '/api/secret',
+    docs: '/docs',
+    versions: {
+      v1: '/api/v1',
+      v2: '/api/v2',
     },
   });
 });
@@ -83,6 +83,14 @@ app.get('/metrics', (_req: Request, res: Response) => {
   res.json({ totalRequests, errorCount, avgResponseTimeMs: avgResponseTime });
 });
 
+// Swagger docs
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// API versioning
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v2/auth', authRoutes);
+
+// backward compatibility
 app.use('/api/auth', authRoutes);
 app.use('/api', protectedRoutes);
 

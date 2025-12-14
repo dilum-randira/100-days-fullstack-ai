@@ -5,9 +5,11 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import inventoryRouter from './routes/inventory';
 import { errorHandler } from './middlewares/errorHandler';
-import { httpLoggerStream, logger } from './utils/logger';
+import { httpLoggerStream } from './utils/logger';
 import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './docs/swagger';
 
 // simple in-memory metrics
 let totalRequests = 0;
@@ -63,6 +65,11 @@ app.use(
 app.get('/', (_req: Request, res: Response) => {
   res.json({
     message: 'Day 16 - Inventory Service',
+    docs: '/docs',
+    versions: {
+      v1: '/api/v1',
+      v2: '/api/v2',
+    },
   });
 });
 
@@ -85,6 +92,14 @@ app.get('/metrics', (_req: Request, res: Response) => {
   });
 });
 
+// Swagger docs
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// API versioning
+app.use('/api/v1/inventory', inventoryRouter);
+app.use('/api/v2/inventory', inventoryRouter);
+
+// keep backward compatibility for now
 app.use('/api/inventory', inventoryRouter);
 
 // error handler last
