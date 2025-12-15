@@ -20,26 +20,41 @@ const app: Application = express();
 
 app.set('trust proxy', 1);
 
-// attach requestId as early as possible
-app.use((req: Request & { requestId?: string }, _res: Response, next: NextFunction) => {
-  req.requestId = randomUUID();
-  next();
-});
-
 // security headers
 app.disable('x-powered-by');
 app.use(helmet());
 
-// CORS with allowlist from env
-const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+// CORS with strict allowlist
+const rawOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const allowlist = rawOrigins;
+
+if (process.env.NODE_ENV === 'production') {
+  if (!allowlist.length || allowlist.includes('*')) {
+    throw new Error('In production, CORS_ORIGINS must be set to specific origins and cannot include *');
+  }
+}
+
 app.use(
   cors({
-    origin: corsOrigins.length ? corsOrigins : '*',
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+      if (allowlist.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   }),
 );
 
-app.use(bodyParser.json());
+// JSON body limit 100kb
+app.use(bodyParser.json({ limit: '100kb' }));
 
 // metrics middleware
 app.use((req: Request, res: Response, next: NextFunction) => {

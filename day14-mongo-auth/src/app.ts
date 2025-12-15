@@ -18,6 +18,8 @@ let totalResponseTimeMs = 0;
 
 const app: Application = express();
 
+app.set('trust proxy', 1);
+
 app.use((req: Request & { requestId?: string }, _res: Response, next: NextFunction) => {
   req.requestId = randomUUID();
   next();
@@ -26,15 +28,47 @@ app.use((req: Request & { requestId?: string }, _res: Response, next: NextFuncti
 app.disable('x-powered-by');
 app.use(helmet());
 
-const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+const rawOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const allowlist = rawOrigins;
+
+if (process.env.NODE_ENV === 'production') {
+  if (!allowlist.length || allowlist.includes('*')) {
+    throw new Error('In production, CORS_ORIGINS must be set to specific origins and cannot include *');
+  }
+}
+
 app.use(
   cors({
-    origin: corsOrigins.length ? corsOrigins : '*',
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+      if (allowlist.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   }),
 );
 
-app.use(bodyParser.json());
+// JSON body limit 100kb
+app.use(bodyParser.json({ limit: '100kb' }));
+
+// disable caching for auth responses
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/api/v1') || req.path.startsWith('/api/v2')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+  }
+  next();
+});
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
