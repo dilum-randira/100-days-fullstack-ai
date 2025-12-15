@@ -13,8 +13,12 @@ export const errorHandler = (
   let message = 'Internal Server Error';
 
   if (err instanceof Error) {
-    message = err.message;
     statusCode = (err as any).statusCode || 500;
+    if (statusCode >= 500) {
+      message = 'Internal Server Error';
+    } else {
+      message = err.message;
+    }
   }
 
   logger.error('Request error', {
@@ -22,7 +26,7 @@ export const errorHandler = (
     path: req.path,
     method: req.method,
     statusCode,
-    message,
+    message: err instanceof Error ? err.message : String(err),
   });
 
   res.status(statusCode).json({

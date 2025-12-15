@@ -1,33 +1,43 @@
 import mongoose from 'mongoose';
+import { logger } from './utils/logger';
+
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 3000;
 
 export const connectDB = async (): Promise<void> => {
   const uri = process.env.MONGO_URI;
 
   if (!uri) {
-    console.error('MONGO_URI is not defined in environment variables');
-    process.exit(1);
+    logger.error('MONGO_URI is not defined in environment variables');
+    throw new Error('MONGO_URI is not defined');
   }
 
-  try {
-    const conn = await mongoose.connect(uri);
-    console.log(`✅ MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
-  } catch (error) {
-    console.error('❌ MongoDB connection error', error);
-    process.exit(1);
+  let attempt = 0;
+  while (attempt < MAX_RETRIES) {
+    try {
+      attempt += 1;
+      const conn = await mongoose.connect(uri);
+      logger.info('MongoDB connected', {
+        host: conn.connection.host,
+        name: conn.connection.name,
+      });
+      return;
+    } catch (error: any) {
+      logger.error('MongoDB connection error', {
+        attempt,
+        message: error.message,
+      });
+      if (attempt >= MAX_RETRIES) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
   }
 };
 
-const gracefulShutdown = async (signal: string): Promise<void> => {
-  console.log(`\n${signal} received. Closing MongoDB connection...`);
-  try {
+export const closeDB = async (): Promise<void> => {
+  if (mongoose.connection.readyState !== 0) {
     await mongoose.connection.close();
-    console.log('MongoDB connection closed gracefully');
-    process.exit(0);
-  } catch (error) {
-    console.error('Error during MongoDB shutdown', error);
-    process.exit(1);
+    logger.info('MongoDB connection closed gracefully');
   }
 };
-
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

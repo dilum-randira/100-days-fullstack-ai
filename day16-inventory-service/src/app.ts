@@ -18,6 +18,8 @@ let totalResponseTimeMs = 0;
 
 const app: Application = express();
 
+app.set('trust proxy', 1);
+
 // attach requestId as early as possible
 app.use((req: Request & { requestId?: string }, _res: Response, next: NextFunction) => {
   req.requestId = randomUUID();
