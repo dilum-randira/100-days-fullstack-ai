@@ -8,9 +8,10 @@ import { inventoryWorker, inventoryQueueScheduler } from './queues/inventoryQueu
 import { logger } from './utils/logger';
 import { redisClient } from './utils/redis';
 import http from 'http';
+import { config } from './config';
 
-const PORT = Number(process.env.PORT) || 3000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const PORT = config.port;
+const NODE_ENV = config.nodeEnv;
 
 const start = async (): Promise<void> => {
   try {

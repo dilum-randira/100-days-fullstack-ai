@@ -1,16 +1,12 @@
 import mongoose from 'mongoose';
 import { logger } from './utils/logger';
+import { config } from './config';
 
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 3000;
 
 export const connectDB = async (): Promise<void> => {
-  const uri = process.env.MONGO_URI;
-
-  if (!uri) {
-    logger.error('MONGO_URI is not defined in environment variables');
-    throw new Error('MONGO_URI is not defined');
-  }
+  const uri = config.mongoUri;
 
   let attempt = 0;
   while (attempt < MAX_RETRIES) {

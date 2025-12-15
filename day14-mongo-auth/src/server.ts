@@ -1,10 +1,12 @@
 import dotenv from 'dotenv';
+
 dotenv.config();
 
 import app from './app';
 import { connectDB } from './db';
+import { config } from './config';
 
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 
 const start = async (): Promise<void> => {
   await connectDB();
