@@ -8,34 +8,49 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
+const nodeEnv = process.env.NODE_ENV === 'production' ? 'production' : 'development';
 const logLevel = process.env.LOG_LEVEL || 'info';
+
+const baseFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.errors({ stack: true }),
+);
+
+const consoleFormat =
+  nodeEnv === 'production'
+    ? winston.format.combine(baseFormat, winston.format.json())
+    : winston.format.combine(
+        baseFormat,
+        winston.format.colorize(),
+        winston.format.printf((info) => {
+          const { timestamp, level, message, ...meta } = info;
+          const metaString = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+          return `${timestamp} [${level}]: ${message}${metaString}`;
+        }),
+      );
 
 export const logger = winston.createLogger({
   level: logLevel,
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.errors({ stack: true }),
-    winston.format.json(),
-  ),
+  format: baseFormat,
   transports: [
-    new winston.transports.File({ filename: path.join(logsDir, 'error.log'), level: 'error' }),
-    new winston.transports.File({ filename: path.join(logsDir, 'combined.log') }),
+    new winston.transports.Console({ format: consoleFormat }),
   ],
 });
-
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.printf((info) => `${info.timestamp} [${info.level}]: ${info.message}`),
-      ),
-    }),
-  );
-}
 
 export const httpLoggerStream = {
   write: (message: string) => {
     logger.info(message.trim());
   },
 };
+
+process.on('uncaughtException', (err: Error) => {
+  logger.error('uncaughtException', { message: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  logger.error('unhandledRejection', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+  });
+  process.exit(1);
+});
