@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
+import './events/listeners';
 
 // simple in-memory metrics
 let totalRequests = 0;

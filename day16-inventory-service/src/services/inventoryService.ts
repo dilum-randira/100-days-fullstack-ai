@@ -5,6 +5,7 @@ import { redisClient } from '../utils/redis';
 import { logger } from '../utils/logger';
 import { enqueueInventoryJobs } from '../queues/inventoryQueue';
 import { emitRealtimeEvent } from '../sockets';
+import { eventBus, DOMAIN_EVENTS } from '../events/EventBus';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -181,6 +182,14 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
     { name: 'archive-old-logs', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
   ]);
 
+  // Domain event: InventoryAdjusted
+  await eventBus.publish(DOMAIN_EVENTS.InventoryAdjusted, {
+    itemId: String(item._id),
+    oldQuantity,
+    newQuantity,
+    delta,
+  });
+
   try {
     emitRealtimeEvent('inventory:update', String(item._id), {
       oldQuantity,
@@ -195,6 +204,26 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
   }
 
   return item;
+};
+
+export const publishBatchConsumedEvent = async (
+  batchId: string,
+  payload: { remainingWeight: number; [key: string]: unknown },
+): Promise<void> => {
+  await eventBus.publish(DOMAIN_EVENTS.BatchConsumed, {
+    batchId,
+    ...payload,
+  });
+};
+
+export const publishBatchQCPassedEvent = async (
+  batchId: string,
+  payload: { status: string; [key: string]: unknown },
+): Promise<void> => {
+  await eventBus.publish(DOMAIN_EVENTS.BatchQCPassed, {
+    batchId,
+    ...payload,
+  });
 };
 
 export const emitBatchUpdateEvent = (
