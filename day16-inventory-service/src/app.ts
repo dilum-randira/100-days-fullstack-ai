@@ -4,13 +4,14 @@ import bodyParser from 'body-parser';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import inventoryRouter from './routes/inventory';
+import aiRouter from './routes/ai';
 import { errorHandler } from './middlewares/errorHandler';
 import { httpLoggerStream } from './utils/logger';
 import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
+import './events/listeners';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
-import './events/listeners';
 
 // simple in-memory metrics
 let totalRequests = 0;
@@ -112,6 +113,8 @@ app.get('/metrics', (_req: Request, res: Response) => {
 
 // Swagger docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+app.use('/api/ai', aiRouter);
 
 // API versioning
 app.use('/api/v1/inventory', inventoryRouter);
