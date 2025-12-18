@@ -9,6 +9,7 @@ import { logger } from './utils/logger';
 import { redisClient } from './utils/redis';
 import http from 'http';
 import { config } from './config';
+import { initSocket } from './sockets';
 
 const PORT = config.port;
 const NODE_ENV = config.nodeEnv;
@@ -38,15 +39,22 @@ const start = async (): Promise<void> => {
 
   const server = http.createServer(app);
 
+  try {
+    initSocket(server);
+    logger.info('socket.io.initialized');
+  } catch (err: any) {
+    logger.error('socket.io.init_error', { message: err.message });
+  }
+
   server.listen(PORT, '0.0.0.0', () => {
     logger.info('server.started', { env: NODE_ENV, port: PORT });
-    console.log(`🚀 Day 16 Inventory Service running on http://0.0.0.0:${PORT}`);
+    console.log(`Day 16 Inventory Service running on http://0.0.0.0:${PORT}`);
   });
 
   const shutdown = async (signal: string) => {
     logger.info('server.shutdown.initiated', { signal });
 
-    server.close((err) => {
+    server.close((err?: Error) => {
       if (err) {
         logger.error('server.shutdown.http_error', { message: err.message });
       }

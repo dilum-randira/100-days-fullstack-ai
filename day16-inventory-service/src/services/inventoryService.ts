@@ -4,6 +4,7 @@ import { InventoryLog, IInventoryLogDocument } from '../models/InventoryLog';
 import { redisClient } from '../utils/redis';
 import { logger } from '../utils/logger';
 import { enqueueInventoryJobs } from '../queues/inventoryQueue';
+import { emitRealtimeEvent } from '../sockets';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -180,7 +181,42 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
     { name: 'archive-old-logs', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
   ]);
 
+  try {
+    emitRealtimeEvent('inventory:update', String(item._id), {
+      oldQuantity,
+      newQuantity,
+      delta,
+    });
+  } catch (err: any) {
+    logger.error('realtime.inventory_update.error', {
+      itemId: String(item._id),
+      message: err.message,
+    });
+  }
+
   return item;
+};
+
+export const emitBatchUpdateEvent = (
+  batchId: string,
+  data: { remainingWeight: number; [key: string]: unknown },
+): void => {
+  try {
+    emitRealtimeEvent('batch:update', batchId, data);
+  } catch (err: any) {
+    logger.error('realtime.batch_update.error', { batchId, message: err.message });
+  }
+};
+
+export const emitQcStatusEvent = (
+  batchId: string,
+  data: { status: string; [key: string]: unknown },
+): void => {
+  try {
+    emitRealtimeEvent('qc:status', batchId, data);
+  } catch (err: any) {
+    logger.error('realtime.qc_status.error', { batchId, message: err.message });
+  }
 };
 
 export const getLowStockItems = async (threshold?: number): Promise<IInventoryItemDocument[]> => {
