@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import inventoryRouter from './routes/inventory';
 import aiRouter from './routes/ai';
+import featureRoutes from './routes/features';
 import { errorHandler } from './middlewares/errorHandler';
 import { httpLoggerStream } from './utils/logger';
 import mongoose from 'mongoose';
@@ -122,6 +123,8 @@ app.use('/api/v2/inventory', inventoryRouter);
 
 // keep backward compatibility for now
 app.use('/api/inventory', inventoryRouter);
+
+app.use('/api/features', featureRoutes);
 
 // error handler last
 app.use(errorHandler);
