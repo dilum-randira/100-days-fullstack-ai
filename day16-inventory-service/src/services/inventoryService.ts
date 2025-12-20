@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { InventoryItem, IInventoryItemDocument, InventoryStatus } from '../models/InventoryItem';
 import { isValidObjectId } from 'mongoose';
 import { InventoryLog, IInventoryLogDocument } from '../models/InventoryLog';
@@ -178,54 +179,101 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
     throw Object.assign(new Error('Delta must be an integer'), { statusCode: 400 });
   }
 
-  const item = await getItemById(id);
-  const oldQuantity = item.quantity;
-  const newQuantity = oldQuantity + delta;
-
-  if (newQuantity < 0) {
-    throw Object.assign(new Error('Quantity cannot be negative'), { statusCode: 400 });
-  }
-
-  item.quantity = newQuantity;
-  await item.save();
-
-  await InventoryLog.create({
-    itemId: item._id,
-    delta,
-    oldQuantity,
-    newQuantity,
-  });
-
-  await clearInventoryCache();
-
-  await enqueueInventoryJobs([
-    { name: 'recalculate-analytics', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
-    { name: 'send-low-stock-alerts', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
-    { name: 'archive-old-logs', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
-  ]);
-
-  // Domain event: InventoryAdjusted
-  await eventBus.publish(DOMAIN_EVENTS.InventoryAdjusted, {
-    itemId: String(item._id),
-    oldQuantity,
-    newQuantity,
-    delta,
-  });
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  logger.info('transaction.start', { operation: 'adjustQuantity', itemId: id });
 
   try {
-    emitRealtimeEvent('inventory:update', String(item._id), {
+    const item = await InventoryItem.findById(id).session(session).exec();
+    if (!item) {
+      throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+    }
+
+    const oldQuantity = item.quantity;
+    const newQuantity = oldQuantity + delta;
+
+    if (newQuantity < 0) {
+      throw Object.assign(new Error('Quantity cannot be negative'), { statusCode: 400 });
+    }
+
+    item.quantity = newQuantity;
+    await item.save({ session });
+
+    await InventoryLog.create(
+      [
+        {
+          itemId: item._id,
+          delta,
+          oldQuantity,
+          newQuantity,
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+    logger.info('transaction.commit', { operation: 'adjustQuantity', itemId: String(item._id) });
+
+    // Non-transactional side effects
+    await clearInventoryCache();
+
+    await enqueueInventoryJobs([
+      { name: 'recalculate-analytics', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
+      { name: 'send-low-stock-alerts', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
+      { name: 'archive-old-logs', data: { itemId: String(item._id), trigger: 'quantity-adjusted' } },
+    ]);
+
+    await eventBus.publish(DOMAIN_EVENTS.InventoryAdjusted, {
+      itemId: String(item._id),
       oldQuantity,
       newQuantity,
       delta,
     });
-  } catch (err: any) {
-    logger.error('realtime.inventory_update.error', {
-      itemId: String(item._id),
-      message: err.message,
-    });
-  }
 
-  return item;
+    try {
+      emitRealtimeEvent('inventory:update', String(item._id), {
+        oldQuantity,
+        newQuantity,
+        delta,
+      });
+    } catch (err: any) {
+      logger.error('realtime.inventory_update.error', {
+        itemId: String(item._id),
+        message: err.message,
+      });
+    }
+
+    return item;
+  } catch (error) {
+    await session.abortTransaction();
+    logger.error('transaction.abort', { operation: 'adjustQuantity', itemId: id, message: (error as any).message });
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
+// Helper to run arbitrary operations inside a transaction for batch/QC flows
+export const withInventoryTransaction = async <T>(
+  operation: string,
+  fn: (session: mongoose.ClientSession) => Promise<T>,
+): Promise<T> => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  logger.info('transaction.start', { operation });
+
+  try {
+    const result = await fn(session);
+    await session.commitTransaction();
+    logger.info('transaction.commit', { operation });
+    return result;
+  } catch (error) {
+    await session.abortTransaction();
+    logger.error('transaction.abort', { operation, message: (error as any).message });
+    throw error;
+  } finally {
+    session.endSession();
+  }
 };
 
 export const publishBatchConsumedEvent = async (
@@ -285,70 +333,4 @@ export const getLowStockItems = async (threshold?: number): Promise<IInventoryIt
 export const getInventorySummary = async () => {
   const cacheKey = 'analytics:inventory:summary';
   const cached = await cacheGet<unknown>(cacheKey);
-  if (cached) return cached;
-
-  const summary = await fetchInventorySummary();
-  if (summary) {
-    await cacheSet(cacheKey, summary);
-    return summary;
-  }
-
-  return cached; // could be null
-};
-
-export const getTrendingInventoryItems = async (limit = 10) => {
-  const cacheKey = `analytics:inventory:trending:${limit}`;
-  const cached = await cacheGet<unknown>(cacheKey);
-  if (cached) return cached;
-
-  const items = await fetchTrendingItems(limit);
-  if (items) {
-    await cacheSet(cacheKey, items);
-    return items;
-  }
-
-  return cached;
-};
-
-export const getTopInventoryItems = async (limit = 10) => {
-  const cacheKey = `analytics:inventory:top:${limit}`;
-  const cached = await cacheGet<unknown>(cacheKey);
-  if (cached) return cached;
-
-  const items = await fetchTopItems(limit);
-  if (items) {
-    await cacheSet(cacheKey, items);
-    return items;
-  }
-
-  return cached;
-};
-
-export const getLogsForItem = async (
-  itemId: string,
-  page: number = 1,
-  limit: number = 20,
-): Promise<{ logs: IInventoryLogDocument[]; total: number; page: number; limit: number }> => {
-  if (!isValidObjectId(itemId)) {
-    throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
-  }
-
-  const safePage = page > 0 ? page : 1;
-  const safeLimit = limit > 0 ? limit : 20;
-  const skip = (safePage - 1) * safeLimit;
-
-  const [logs, total] = await Promise.all([
-    InventoryLog.find({ itemId }).sort({ createdAt: -1 }).skip(skip).limit(safeLimit).exec(),
-    InventoryLog.countDocuments({ itemId }).exec(),
-  ]);
-
-  return { logs, total, page: safePage, limit: safeLimit };
-};
-
-export const triggerInventoryBackgroundJobs = async (trigger: 'quantity-adjusted' | 'batch-consumed' | 'qc-passed', itemId?: string): Promise<void> => {
-  await enqueueInventoryJobs([
-    { name: 'recalculate-analytics', data: { itemId, trigger } },
-    { name: 'send-low-stock-alerts', data: { itemId, trigger } },
-    { name: 'archive-old-logs', data: { itemId, trigger } },
-  ]);
-};
+  if
