@@ -11,6 +11,7 @@ import {
   getInventoryStatsHandler,
   getTopInventoryHandler,
   getItemLogsHandler,
+  restoreItem,
 } from '../controllers/inventoryController';
 
 const router = Router();
@@ -26,5 +27,6 @@ router.get('/:id', getInventoryItem);
 router.put('/:id', updateInventoryItem);
 router.delete('/:id', deleteInventoryItem);
 router.post('/:id/adjust', adjustInventoryQuantity);
+router.post('/:id/restore', restoreItem);
 
 export default router;

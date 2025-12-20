@@ -12,6 +12,8 @@ export interface IInventoryItem {
   supplier?: string;
   status: InventoryStatus;
   minThreshold: number;
+  isDeleted?: boolean;
+  deletedAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -67,6 +69,17 @@ const inventoryItemSchema = new Schema<IInventoryItemDocument>(
       required: true,
       default: 0,
       min: 0,
+    },
+    isDeleted: {
+      type: Boolean,
+      required: true,
+      default: false,
+      index: true,
+    },
+    deletedAt: {
+      type: Date,
+      required: false,
+      default: null,
     },
   },
   {

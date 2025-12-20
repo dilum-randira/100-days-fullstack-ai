@@ -84,6 +84,7 @@ export interface InventoryFilter {
   productName?: string;
   supplier?: string;
   location?: string;
+  includeDeleted?: boolean;
 }
 
 export interface PaginationQuery {
@@ -106,7 +107,7 @@ export const getItemById = async (id: string): Promise<IInventoryItemDocument> =
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
   }
 
-  const item = await InventoryItem.findById(id).exec();
+  const item = await InventoryItem.findOne({ _id: id, isDeleted: { $ne: true } }).exec();
   if (!item) {
     throw Object.assign(new Error('Item not found'), { statusCode: 404 });
   }
@@ -139,11 +140,35 @@ export const deleteItem = async (id: string): Promise<void> => {
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
   }
 
-  const result = await InventoryItem.findByIdAndDelete(id).exec();
+  const result = await InventoryItem.findOneAndUpdate(
+    { _id: id, isDeleted: { $ne: true } },
+    { $set: { isDeleted: true, deletedAt: new Date() } },
+    { new: true },
+  ).exec();
+
   if (!result) {
     throw Object.assign(new Error('Item not found'), { statusCode: 404 });
   }
   await clearInventoryCache();
+};
+
+export const restoreItem = async (id: string): Promise<IInventoryItemDocument> => {
+  if (!isValidObjectId(id)) {
+    throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
+  }
+
+  const item = await InventoryItem.findOneAndUpdate(
+    { _id: id, isDeleted: true },
+    { $set: { isDeleted: false, deletedAt: null } },
+    { new: true },
+  ).exec();
+
+  if (!item) {
+    throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+  }
+
+  await clearInventoryCache();
+  return item;
 };
 
 export const listItems = async (
@@ -156,6 +181,9 @@ export const listItems = async (
 
   const query: Record<string, unknown> = {};
 
+  if (!filter.includeDeleted) {
+    query.isDeleted = { $ne: true };
+  }
   if (filter.productName) {
     query.productName = { $regex: filter.productName, $options: 'i' };
   }
@@ -333,4 +361,32 @@ export const getLowStockItems = async (threshold?: number): Promise<IInventoryIt
 export const getInventorySummary = async () => {
   const cacheKey = 'analytics:inventory:summary';
   const cached = await cacheGet<unknown>(cacheKey);
-  if
+  if (cached) return cached;
+
+  const summary = await fetchInventorySummary();
+  await cacheSet(cacheKey, summary);
+
+  return summary;
+};
+
+export const getTopItems = async () => {
+  const cacheKey = 'analytics:inventory:top-items';
+  const cached = await cacheGet<unknown>(cacheKey);
+  if (cached) return cached;
+
+  const topItems = await fetchTopItems();
+  await cacheSet(cacheKey, topItems);
+
+  return topItems;
+};
+
+export const getTrendingItems = async () => {
+  const cacheKey = 'analytics:inventory:trending-items';
+  const cached = await cacheGet<unknown>(cacheKey);
+  if (cached) return cached;
+
+  const trendingItems = await fetchTrendingItems();
+  await cacheSet(cacheKey, trendingItems);
+
+  return trendingItems;
+};

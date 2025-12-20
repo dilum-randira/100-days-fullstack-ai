@@ -5,6 +5,8 @@ export interface IInventoryLog {
   delta: number;
   oldQuantity: number;
   newQuantity: number;
+  isDeleted?: boolean;
+  deletedAt?: Date | null;
   createdAt?: Date;
 }
 
@@ -30,10 +32,21 @@ const inventoryLogSchema = new Schema<IInventoryLogDocument>(
       type: Number,
       required: true,
     },
+    isDeleted: {
+      type: Boolean,
+      required: true,
+      default: false,
+      index: true,
+    },
+    deletedAt: {
+      type: Date,
+      required: false,
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
-  }
+  },
 );
 
 export const InventoryLog = mongoose.model<IInventoryLogDocument>('InventoryLog', inventoryLogSchema);

@@ -11,6 +11,7 @@ import {
   getInventoryStats,
   getTopInventory,
   getLogsForItem,
+  restoreItem as restoreInventoryItem,
 } from '../services/inventoryService';
 import { validateInventoryInput } from '../utils/validators';
 import { InventoryLog } from '../models/InventoryLog';
@@ -33,13 +34,14 @@ export const createInventoryItem = async (req: Request, res: Response, next: Nex
 
 export const listInventoryItems = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { page, limit, productName, supplier, location } = req.query;
+    const { page, limit, productName, supplier, location, includeDeleted } = req.query;
 
     const result = await listItems(
       {
         productName: productName as string | undefined,
         supplier: supplier as string | undefined,
         location: location as string | undefined,
+        includeDeleted: includeDeleted === 'true',
       },
       {
         page: page ? parseInt(page as string, 10) : undefined,
@@ -178,6 +180,15 @@ export const getItemLogsHandler = async (
         total: result.total,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const restoreItem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const item = await restoreInventoryItem(req.params.id);
+    res.status(200).json({ success: true, data: item });
   } catch (error) {
     next(error);
   }
