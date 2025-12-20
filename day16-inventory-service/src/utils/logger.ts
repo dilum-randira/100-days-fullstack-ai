@@ -37,6 +37,16 @@ export const logger = winston.createLogger({
   ],
 });
 
+export const withRequestContext = (
+  requestId?: string,
+  correlationId?: string,
+): winston.Logger => {
+  if (!requestId && !correlationId) {
+    return logger;
+  }
+  return logger.child({ requestId, correlationId });
+};
+
 // morgan stream
 export const httpLoggerStream = {
   write: (message: string) => {

@@ -1,5 +1,10 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { logger } from '../utils/logger';
+
+export interface RequestContext {
+  requestId?: string;
+  correlationId?: string;
+}
 
 export interface InventorySummary {
   totalItems: number;
@@ -30,7 +35,10 @@ const client = createClient();
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function withRetry<T>(fn: () => Promise<T>, retries = ANALYTICS_RETRY_COUNT): Promise<T> {
+async function withRetry<T>(
+  fn: () => Promise<AxiosResponse<T>>,
+  retries = ANALYTICS_RETRY_COUNT,
+): Promise<AxiosResponse<T>> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
@@ -49,9 +57,18 @@ async function withRetry<T>(fn: () => Promise<T>, retries = ANALYTICS_RETRY_COUN
   throw lastError;
 }
 
-export const fetchInventorySummary = async (): Promise<InventorySummary | null> => {
+export const fetchInventorySummary = async (
+  context?: RequestContext,
+): Promise<InventorySummary | null> => {
   try {
-    const response = await withRetry(() => client.get<InventorySummary>('/inventory/summary'));
+    const response = await withRetry(() =>
+      client.get<InventorySummary>('/inventory/summary', {
+        headers: {
+          'x-request-id': context?.requestId,
+          'x-correlation-id': context?.correlationId,
+        },
+      }),
+    );
     return response.data;
   } catch (err) {
     logger.error('analytics.client.summary.failed', { message: (err as any)?.message });
@@ -59,9 +76,19 @@ export const fetchInventorySummary = async (): Promise<InventorySummary | null> 
   }
 };
 
-export const fetchTrendingItems = async (limit = 10): Promise<TrendingItem[] | null> => {
+export const fetchTrendingItems = async (
+  limit = 10,
+  context?: RequestContext,
+): Promise<TrendingItem[] | null> => {
   try {
-    const response = await withRetry(() => client.get<TrendingItem[]>(`/inventory/trending?limit=${limit}`));
+    const response = await withRetry(() =>
+      client.get<TrendingItem[]>(`/inventory/trending?limit=${limit}`, {
+        headers: {
+          'x-request-id': context?.requestId,
+          'x-correlation-id': context?.correlationId,
+        },
+      }),
+    );
     return response.data;
   } catch (err) {
     logger.error('analytics.client.trending.failed', { message: (err as any)?.message });
@@ -69,9 +96,19 @@ export const fetchTrendingItems = async (limit = 10): Promise<TrendingItem[] | n
   }
 };
 
-export const fetchTopItems = async (limit = 10): Promise<TopItem[] | null> => {
+export const fetchTopItems = async (
+  limit = 10,
+  context?: RequestContext,
+): Promise<TopItem[] | null> => {
   try {
-    const response = await withRetry(() => client.get<TopItem[]>(`/inventory/top?limit=${limit}`));
+    const response = await withRetry(() =>
+      client.get<TopItem[]>(`/inventory/top?limit=${limit}`, {
+        headers: {
+          'x-request-id': context?.requestId,
+          'x-correlation-id': context?.correlationId,
+        },
+      }),
+    );
     return response.data;
   } catch (err) {
     logger.error('analytics.client.top.failed', { message: (err as any)?.message });

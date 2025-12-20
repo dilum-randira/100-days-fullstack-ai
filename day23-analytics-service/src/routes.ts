@@ -4,9 +4,14 @@ import { getInventorySummary, getTopItems, getTrendingItems } from './services/a
 const router = Router();
 
 router.get('/inventory/summary', async (req: Request, res: Response, next: NextFunction) => {
+  const correlationId = (req as any).correlationId as string | undefined;
+  const requestId = (req as any).requestId as string | undefined;
+
   try {
     const summary = await getInventorySummary();
-    res.json({ success: true, data: summary });
+    // lightweight inline logging without sensitive data
+    console.log('analytics.summary.request', { correlationId, requestId });
+    res.json({ success: true, data: summary, correlationId, requestId });
   } catch (err) {
     next(err);
   }

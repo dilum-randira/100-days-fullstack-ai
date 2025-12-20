@@ -10,6 +10,9 @@ const commonProxyOptions = {
     if (req.requestId) {
       proxyReq.setHeader('x-request-id', req.requestId);
     }
+    if (req.correlationId) {
+      proxyReq.setHeader('x-correlation-id', req.correlationId);
+    }
     if (req.user) {
       proxyReq.setHeader('x-user-id', (req.user as any).sub || (req.user as any).id || '');
       proxyReq.setHeader('x-user-role', (req.user as any).role || '');
