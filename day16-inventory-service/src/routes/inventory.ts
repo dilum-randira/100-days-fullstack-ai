@@ -13,6 +13,7 @@ import {
   getItemLogsHandler,
   restoreItem,
 } from '../controllers/inventoryController';
+import { exportInventory, exportLogs, exportBatches } from '../services/exportService';
 
 const router = Router();
 
@@ -28,5 +29,8 @@ router.put('/:id', updateInventoryItem);
 router.delete('/:id', deleteInventoryItem);
 router.post('/:id/adjust', adjustInventoryQuantity);
 router.post('/:id/restore', restoreItem);
+router.get('/export/inventory', exportInventory);
+router.get('/export/logs', exportLogs);
+router.get('/export/batches', exportBatches);
 
 export default router;
