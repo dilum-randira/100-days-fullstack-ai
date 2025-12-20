@@ -6,8 +6,10 @@ import { logger } from '../utils/logger';
 import { enqueueInventoryJobs } from '../queues/inventoryQueue';
 import { emitRealtimeEvent } from '../sockets';
 import { eventBus, DOMAIN_EVENTS } from '../events/EventBus';
+import { fetchInventorySummary, fetchTopItems, fetchTrendingItems } from './analyticsClient';
 
 const CACHE_TTL_SECONDS = 60;
+const ANALYTICS_CACHE_TTL_SECONDS = 60;
 
 const buildCacheKey = (endpoint: string, params?: Record<string, unknown>): string => {
   const base = `inventory:${endpoint}`;
@@ -41,6 +43,26 @@ const safeSetCache = async (key: string, value: unknown): Promise<void> => {
     await redisClient.set(key, JSON.stringify(value), 'EX', CACHE_TTL_SECONDS);
   } catch (err: any) {
     logger.error('cache.set.error', { key, message: err.message });
+  }
+};
+
+const cacheSet = async <T>(key: string, value: T): Promise<void> => {
+  if (!redisClient) return;
+  try {
+    await redisClient.set(key, JSON.stringify(value), 'EX', ANALYTICS_CACHE_TTL_SECONDS);
+  } catch (err: any) {
+    // best-effort cache
+  }
+};
+
+const cacheGet = async <T>(key: string): Promise<T | null> => {
+  if (!redisClient) return null;
+  try {
+    const raw = await redisClient.get(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
   }
 };
 
@@ -260,68 +282,46 @@ export const getLowStockItems = async (threshold?: number): Promise<IInventoryIt
   return InventoryItem.find({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
 };
 
-export const getInventorySummary = async (
-  threshold?: number,
-): Promise<{
-  totalItems: number;
-  totalQuantity: number;
-  lowStockCount: number;
-}> => {
-  const key = buildCacheKey('summary', { threshold });
-  const cached = await safeGetCache<{
-    totalItems: number;
-    totalQuantity: number;
-    lowStockCount: number;
-  }>(key);
+export const getInventorySummary = async () => {
+  const cacheKey = 'analytics:inventory:summary';
+  const cached = await cacheGet<unknown>(cacheKey);
   if (cached) return cached;
 
-  const totalItems = await InventoryItem.countDocuments().exec();
-
-  const agg = await InventoryItem.aggregate([
-    { $group: { _id: null, totalQuantity: { $sum: '$quantity' } } },
-  ]).exec();
-
-  const totalQuantity = agg.length > 0 && typeof agg[0].totalQuantity === 'number' ? agg[0].totalQuantity : 0;
-
-  let lowStockCount: number;
-  if (threshold !== undefined) {
-    if (typeof threshold !== 'number' || threshold < 0) {
-      throw Object.assign(new Error('Threshold must be a non-negative number'), { statusCode: 400 });
-    }
-    lowStockCount = await InventoryItem.countDocuments({ quantity: { $lt: threshold } }).exec();
-  } else {
-    lowStockCount = await InventoryItem.countDocuments({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
+  const summary = await fetchInventorySummary();
+  if (summary) {
+    await cacheSet(cacheKey, summary);
+    return summary;
   }
 
-  const result = { totalItems, totalQuantity, lowStockCount };
-  await safeSetCache(key, result);
-  return result;
+  return cached; // could be null
 };
 
-export const getInventoryStats = async (): Promise<unknown> => {
-  const key = buildCacheKey('stats');
-  const cached = await safeGetCache<unknown>(key);
+export const getTrendingInventoryItems = async (limit = 10) => {
+  const cacheKey = `analytics:inventory:trending:${limit}`;
+  const cached = await cacheGet<unknown>(cacheKey);
   if (cached) return cached;
 
-  // implement your stats aggregation here
-  const stats = await InventoryItem.aggregate([
-    { $group: { _id: '$location', quantity: { $sum: '$quantity' } } },
-  ]).exec();
+  const items = await fetchTrendingItems(limit);
+  if (items) {
+    await cacheSet(cacheKey, items);
+    return items;
+  }
 
-  const shaped = stats.map((row) => ({ location: row._id, quantity: row.quantity }));
-  await safeSetCache(key, shaped);
-  return shaped;
+  return cached;
 };
 
-export const getTopInventory = async (limit: number = 10): Promise<IInventoryItemDocument[]> => {
-  const safeLimit = limit > 0 ? limit : 10;
-  const key = buildCacheKey('top', { limit: safeLimit });
-  const cached = await safeGetCache<IInventoryItemDocument[]>(key);
+export const getTopInventoryItems = async (limit = 10) => {
+  const cacheKey = `analytics:inventory:top:${limit}`;
+  const cached = await cacheGet<unknown>(cacheKey);
   if (cached) return cached;
 
-  const items = await InventoryItem.find().sort({ quantity: -1 }).limit(safeLimit).exec();
-  await safeSetCache(key, items);
-  return items;
+  const items = await fetchTopItems(limit);
+  if (items) {
+    await cacheSet(cacheKey, items);
+    return items;
+  }
+
+  return cached;
 };
 
 export const getLogsForItem = async (
