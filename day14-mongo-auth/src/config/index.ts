@@ -1,4 +1,55 @@
-import dotenv from 'dotenv';
+if (isCircuitOpen()) {
+  logger.warn('analytics.client.circuit_open');
+  return null; // fallback to cache or safe default
+}
+
+try {
+  const response = await withRetry(...);
+  recordSuccess();
+  return response.data;
+} catch (err) {
+  recordFailure();
+  // log + return null
+}if (isCircuitOpen()) {
+  logger.warn('analytics.client.circuit_open');
+  return null; // fallback to cache or safe default
+}
+
+try {
+  const response = await withRetry(...);
+  recordSuccess();
+  return response.data;
+} catch (err) {
+  recordFailure();
+  // log + return null
+}type RouteKey = string;
+
+interface RouteMetrics {
+  count: number;
+  errors: number;
+  totalDurationMs: number;
+}
+
+const routes: Record<RouteKey, RouteMetrics> = {};
+
+export const recordRequest = (key: string, durationMs: number, error: boolean) => {
+  const m = (routes[key] ??= { count: 0, errors: 0, totalDurationMs: 0 });
+  m.count += 1;
+  if (error) m.errors += 1;
+  m.totalDurationMs += durationMs;
+};
+
+export const getMetricsSnapshot = () => {
+  const snapshot: Record<string, { count: number; errors: number; avgMs: number }> = {};
+  for (const [key, m] of Object.entries(routes)) {
+    snapshot[key] = {
+      count: m.count,
+      errors: m.errors,
+      avgMs: m.count ? Number((m.totalDurationMs / m.count).toFixed(2)) : 0,
+    };
+  }
+  return snapshot;
+};import dotenv from 'dotenv';
 
 dotenv.config();
 
