@@ -132,7 +132,7 @@ export const getInventorySummaryHandler = async (
 ): Promise<void> => {
   try {
     const threshold = req.query.threshold ? Number(req.query.threshold) : undefined;
-    const summary = await getInventorySummary(threshold);
+    const summary = await getInventorySummary(threshold as any);
 
     res.json({ success: true, data: summary });
   } catch (err) {

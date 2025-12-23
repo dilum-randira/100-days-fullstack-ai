@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 import './events/listeners';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
+import chaosRouter from './routes/chaos';
+import { chaosMiddleware } from './controllers/chaosController';
 
 // simple in-memory metrics
 let totalRequests = 0;
@@ -58,6 +60,9 @@ app.use(
 
 // JSON body limit 100kb
 app.use(bodyParser.json({ limit: '100kb' }));
+
+// Chaos middleware (disabled by default; feature-flag protected)
+app.use(chaosMiddleware);
 
 // metrics middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -125,6 +130,9 @@ app.get('/metrics', (_req: Request, res: Response) => {
 
 // Swagger docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Admin-only chaos endpoints (protected in controller)
+app.use('/api/chaos', chaosRouter);
 
 app.use('/api/ai', aiRouter);
 

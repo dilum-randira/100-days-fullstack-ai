@@ -358,7 +358,11 @@ export const getLowStockItems = async (threshold?: number): Promise<IInventoryIt
   return InventoryItem.find({ $expr: { $lt: ['$quantity', '$minThreshold'] } }).exec();
 };
 
-export const getInventorySummary = async () => {
+export const getInventorySummary = async (threshold?: number) => {
+  // threshold is accepted for backward compatibility with existing controller/query API.
+  // Current summary is provided by analytics service and isn't threshold-specific.
+  void threshold;
+
   const cacheKey = 'analytics:inventory:summary';
   const cached = await cacheGet<unknown>(cacheKey);
   if (cached) return cached;
@@ -369,14 +373,106 @@ export const getInventorySummary = async () => {
   return summary;
 };
 
+/**
+ * Inventory stats derived from MongoDB (kept local for resilience when analytics is unavailable).
+ */
+export const getInventoryStats = async (): Promise<{
+  totalItems: number;
+  totalQuantity: number;
+  totalValue: number;
+  lowStockCount: number;
+}> => {
+  const [totalItems, agg] = await Promise.all([
+    InventoryItem.countDocuments({ isDeleted: { $ne: true } }).exec(),
+    InventoryItem.aggregate([
+      { $match: { isDeleted: { $ne: true } } },
+      {
+        $group: {
+          _id: null,
+          totalQuantity: { $sum: '$quantity' },
+          totalValue: { $sum: { $multiply: ['$quantity', '$price'] } },
+          lowStockCount: {
+            $sum: {
+              $cond: [{ $lt: ['$quantity', '$minThreshold'] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalQuantity: { $ifNull: ['$totalQuantity', 0] },
+          totalValue: { $ifNull: ['$totalValue', 0] },
+          lowStockCount: { $ifNull: ['$lowStockCount', 0] },
+        },
+      },
+    ]).exec(),
+  ]);
+
+  const row = (agg && agg[0]) || { totalQuantity: 0, totalValue: 0, lowStockCount: 0 };
+
+  return {
+    totalItems,
+    totalQuantity: Number(row.totalQuantity) || 0,
+    totalValue: Number(row.totalValue) || 0,
+    lowStockCount: Number(row.lowStockCount) || 0,
+  };
+};
+
+/**
+ * Top inventory items by value (quantity * price).
+ */
+export const getTopInventory = async (limit = 10): Promise<IInventoryItemDocument[]> => {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 100) : 10;
+
+  const ids = await InventoryItem.aggregate([
+    { $match: { isDeleted: { $ne: true } } },
+    { $addFields: { value: { $multiply: ['$quantity', '$price'] } } },
+    { $sort: { value: -1 } },
+    { $limit: safeLimit },
+    { $project: { _id: 1 } },
+  ]).exec();
+
+  const objectIds = ids.map((d: any) => d._id).filter(Boolean);
+  if (!objectIds.length) return [];
+
+  const docs = await InventoryItem.find({ _id: { $in: objectIds } }).exec();
+  const order = new Map(objectIds.map((id: any, idx: number) => [String(id), idx]));
+
+  // keep stable order
+  return docs.sort((a, b) => (order.get(String(a._id)) ?? 0) - (order.get(String(b._id)) ?? 0));
+};
+
+/**
+ * Paginated logs for a specific item.
+ */
+export const getLogsForItem = async (
+  itemId: string,
+  page = 1,
+  limit = 20,
+): Promise<{ logs: IInventoryLogDocument[]; total: number; page: number; limit: number }> => {
+  if (!isValidObjectId(itemId)) {
+    throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
+  }
+
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 200) : 20;
+  const skip = (safePage - 1) * safeLimit;
+
+  const query = { itemId: new mongoose.Types.ObjectId(itemId) } as any;
+
+  const [logs, total] = await Promise.all([
+    InventoryLog.find(query).sort({ createdAt: -1 }).skip(skip).limit(safeLimit).exec(),
+    InventoryLog.countDocuments(query).exec(),
+  ]);
+
+  return { logs, total, page: safePage, limit: safeLimit };
+};
+
 export const getTopItems = async () => {
   const cacheKey = 'analytics:inventory:top-items';
   const cached = await cacheGet<unknown>(cacheKey);
   if (cached) return cached;
-
-  const topItems = await fetchTopItems();
-  await cacheSet(cacheKey, topItems);
-
   return topItems;
 };
 

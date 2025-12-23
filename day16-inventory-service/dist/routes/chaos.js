@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const chaosController_1 = require("../controllers/chaosController");
+const router = (0, express_1.Router)();
+router.post('/latency', chaosController_1.setLatencyChaos);
+router.post('/error', chaosController_1.setErrorChaos);
+router.post('/cpu', chaosController_1.setCpuChaos);
+router.post('/stop', chaosController_1.stopChaos);
+exports.default = router;
