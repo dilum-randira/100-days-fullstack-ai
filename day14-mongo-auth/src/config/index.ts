@@ -368,4 +368,80 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: analytics-
+                name: analytics-                apiVersion: autoscaling/v2
+                kind: HorizontalPodAutoscaler
+                metadata:
+                  name: inventory-service-hpa
+                  namespace: backend
+                spec:
+                  scaleTargetRef:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    name: inventory-service
+                  minReplicas: 2
+                  maxReplicas: 10
+                  behavior:
+                    scaleUp:
+                      stabilizationWindowSeconds: 60
+                      policies:
+                        - type: Percent
+                          value: 50   # at most +50% pods per scale event
+                          periodSeconds: 60
+                    scaleDown:
+                      stabilizationWindowSeconds: 300
+                      policies:
+                        - type: Percent
+                          value: 25   # at most -25% pods per scale event
+                          periodSeconds: 60
+                  metrics:
+                    - type: Resource
+                      resource:
+                        name: cpu
+                        target:
+                          type: Utilization
+                          averageUtilization: 70
+                    - type: Resource
+                      resource:
+                        name: memory
+                        target:
+                          type: Utilization
+                          averageUtilization: 75
+                ---
+                apiVersion: autoscaling/v2
+                kind: HorizontalPodAutoscaler
+                metadata:
+                  name: analytics-service-hpa
+                  namespace: backend
+                spec:
+                  scaleTargetRef:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    name: analytics-service
+                  minReplicas: 2
+                  maxReplicas: 10
+                  behavior:
+                    scaleUp:
+                      stabilizationWindowSeconds: 60
+                      policies:
+                        - type: Percent
+                          value: 50   # at most +50% pods per scale event
+                          periodSeconds: 60
+                    scaleDown:
+                      stabilizationWindowSeconds: 300
+                      policies:
+                        - type: Percent
+                          value: 25   # at most -25% pods per scale event
+                          periodSeconds: 60
+                  metrics:
+                    - type: Resource
+                      resource:
+                        name: cpu
+                        target:
+                          type: Utilization
+                          averageUtilization: 70
+                    - type: Resource
+                      resource:
+                        name: memory
+                        target:
+                          type: Utilization
+                          averageUtilization:
