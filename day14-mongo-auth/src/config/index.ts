@@ -444,4 +444,588 @@ spec:
                         name: memory
                         target:
                           type: Utilization
-                          averageUtilization:
+                          averageUtilization:                          # =========================
+                          # NAMESPACE (if not exists)
+                          # =========================
+                          apiVersion: v1
+                          kind: Namespace
+                          metadata:
+                            name: backend
+                          ---
+                          # =========================
+                          # AUTH SERVICE CONFIG & SECRETS
+                          # =========================
+                          apiVersion: v1
+                          kind: ConfigMap
+                          metadata:
+                            name: auth-service-config
+                            namespace: backend
+                          data:
+                            # Non‑secret configuration (plain text)
+                            NODE_ENV: "production"
+                            PORT: "4001"
+                            # Placeholder – real value should go into Secret (see below)
+                            MONGO_DB_NAME: "auth-db"
+                          ---
+                          apiVersion: v1
+                          kind: Secret
+                          metadata:
+                            name: auth-service-secret
+                            namespace: backend
+                          type: Opaque
+                          data:
+                            # PLACEHOLDER VALUES – REPLACE WITH REAL BASE64 ENCODED SECRETS
+                            # echo -n 'mongodb://user:pass@host:27017/auth-db' | base64
+                            MONGO_URI: "BASE64_MONGO_URI"
+                            # echo -n 'your-jwt-access-secret' | base64
+                            JWT_ACCESS_SECRET: "BASE64_JWT_ACCESS_SECRET"
+                            # echo -n 'your-jwt-refresh-secret' | base64
+                            JWT_REFRESH_SECRET: "BASE64_JWT_REFRESH_SECRET"
+                            # echo -n 'redis://user:pass@host:6379/0' | base64
+                            REDIS_URL: "BASE64_REDIS_URL"
+                          ---
+                          apiVersion: apps/v1
+                          kind: Deployment
+                          metadata:
+                            name: auth-service
+                            namespace: backend
+                            labels:
+                              app: auth-service
+                          spec:
+                            replicas: 2
+                            selector:
+                              matchLabels:
+                                app: auth-service
+                            template:
+                              metadata:
+                                labels:
+                                  app: auth-service
+                              spec:
+                                containers:
+                                  - name: auth-service
+                                    image: your-docker-registry/auth-service:latest
+                                    imagePullPolicy: IfNotPresent
+                                    ports:
+                                      - containerPort: 4001
+                                        name: http
+                                    envFrom:
+                                      - configMapRef:
+                                          name: auth-service-config
+                                      - secretRef:
+                                          name: auth-service-secret
+                                    livenessProbe:
+                                      httpGet:
+                                        path: /health
+                                        port: http
+                                      initialDelaySeconds: 15
+                                      periodSeconds: 15
+                                      timeoutSeconds: 2
+                                      failureThreshold: 3
+                                    readinessProbe:
+                                      httpGet:
+                                        path: /ready
+                                        port: http
+                                      initialDelaySeconds: 10
+                                      periodSeconds: 10
+                                      timeoutSeconds: 2
+                                      failureThreshold: 3
+                                    resources:
+                                      requests:
+                                        cpu: "100m"
+                                        memory: "256Mi"
+                                      limits:
+                                        cpu: "500m"
+                                        memory: "512Mi"
+                          ---
+                          apiVersion: v1
+                          kind: Service
+                          metadata:
+                            name: auth-service
+                            namespace: backend
+                            labels:
+                              app: auth-service
+                          spec:
+                            type: ClusterIP
+                            selector:
+                              app: auth-service
+                            ports:
+                              - name: http
+                                port: 4001
+                                targetPort: http
+                          
+                          ---
+                          # =========================
+                          # INVENTORY SERVICE CONFIG & SECRETS
+                          # =========================
+                          apiVersion: v1
+                          kind: ConfigMap
+                          metadata:
+                            name: inventory-service-config
+                            namespace: backend
+                          data:
+                            NODE_ENV: "production"
+                            PORT: "3000"
+                            # These are non‑secret URLs / names – can be plain text
+                            ANALYTICS_SERVICE_URL: "http://analytics-service.backend.svc.cluster.local:4002"
+                            AUTH_SERVICE_URL: "http://auth-service.backend.svc.cluster.local:4001"
+                            INVENTORY_DB_NAME: "inventory-db"
+                          ---
+                          apiVersion: v1
+                          kind: Secret
+                          metadata:
+                            name: inventory-service-secret
+                            namespace: backend
+                          type: Opaque
+                          data:
+                            # PLACEHOLDER VALUES – REPLACE WITH REAL BASE64 ENCODED SECRETS
+                            # echo -n 'mongodb://user:pass@host:27017/inventory-db' | base64
+                            MONGO_URI: "BASE64_MONGO_URI"
+                            # echo -n 'your-jwt-access-secret' | base64
+                            JWT_ACCESS_SECRET: "BASE64_JWT_ACCESS_SECRET"
+                            # echo -n 'your-jwt-refresh-secret' | base64
+                            JWT_REFRESH_SECRET: "BASE64_JWT_REFRESH_SECRET"
+                            # echo -n 'redis://user:pass@host:6379/0' | base64
+                            REDIS_URL: "BASE64_REDIS_URL"
+                          ---
+                          apiVersion: apps/v1
+                          kind: Deployment
+                          metadata:
+                            name: inventory-service
+                            namespace: backend
+                            labels:
+                              app: inventory-service
+                          spec:
+                            replicas: 2
+                            selector:
+                              matchLabels:
+                                app: inventory-service
+                            template:
+                              metadata:
+                                labels:
+                                  app: inventory-service
+                              spec:
+                                containers:
+                                  - name: inventory-service
+                                    image: your-docker-registry/inventory-service:latest
+                                    imagePullPolicy: IfNotPresent
+                                    ports:
+                                      - containerPort: 3000
+                                        name: http
+                                    envFrom:
+                                      - configMapRef:
+                                          name: inventory-service-config
+                                      - secretRef:
+                                          name: inventory-service-secret
+                                    livenessProbe:
+                                      httpGet:
+                                        path: /health
+                                        port: http
+                                      initialDelaySeconds: 15
+                                      periodSeconds: 15
+                                      timeoutSeconds: 2
+                                      failureThreshold: 3
+                                    readinessProbe:
+                                      httpGet:
+                                        path: /ready
+                                        port: http
+                                      initialDelaySeconds: 10
+                                      periodSeconds: 10
+                                      timeoutSeconds: 2
+                                      failureThreshold: 3
+                                    resources:
+                                      requests:
+                                        cpu: "100m"
+                                        memory: "256Mi"
+                                      limits:
+                                        cpu: "500m"
+                                        memory: "512Mi"
+                          ---
+                          apiVersion: v1
+                          kind: Service
+                          metadata:
+                            name: inventory-service
+                            namespace: backend
+                            labels:
+                              app: inventory-service
+                          spec:
+                            type: ClusterIP
+                            selector:
+                              app: inventory-service
+                            ports:
+                              - name: http
+                                port: 3000
+                                targetPort: http
+                          
+                          ---
+                          # =========================
+                          # ANALYTICS SERVICE CONFIG & SECRETS
+                          # =========================
+                          apiVersion: v1
+                          kind: ConfigMap
+                          metadata:
+                            name: analytics-service-config
+                            namespace: backend
+                          data:
+                            NODE_ENV: "production"
+                            PORT: "4002"
+                            ANALYTICS_DB_NAME: "analytics-db"
+                          ---
+                          apiVersion: v1
+                          kind: Secret
+                          metadata:
+                            name: analytics-service-secret
+                            namespace: backend
+                          type: Opaque
+                          data:
+                            # PLACEHOLDER VALUES – REPLACE WITH REAL BASE64 ENCODED SECRETS
+                            # echo -n 'mongodb://user:pass@host:27017/analytics-db' | base64
+                            MONGO_URI: "BASE64_MONGO_URI"
+                            # echo -n 'your-jwt-access-secret' | base64
+                            JWT_ACCESS_SECRET: "BASE64_JWT_ACCESS_SECRET"
+                            # echo -n 'redis://user:pass@host:6379/1' | base64 (if analytics uses redis)
+                            REDIS_URL: "BASE64_REDIS_URL"
+                          ---
+                          apiVersion: apps/v1
+                          kind: Deployment
+                          metadata:
+                            name: analytics-service
+                            namespace: backend
+                            labels:
+                              app: analytics-service
+                          spec:
+                            replicas: 2
+                            selector:
+                              matchLabels:
+                                app: analytics-service
+                            template:
+                              metadata:
+                                labels:
+                                  app: analytics-service
+                              spec:
+                                containers:
+                                  - name: analytics-service
+                                    image: your-docker-registry/analytics-service:latest
+                                    imagePullPolicy: IfNotPresent
+                                    ports:
+                                      - containerPort: 4002
+                                        name: http
+                                    envFrom:
+                                      - configMapRef:
+                                          name: analytics-service-config
+                                      - secretRef:
+                                          name: analytics-service-secret
+                                    livenessProbe:
+                                      httpGet:
+                                        path: /health
+                                        port: http
+                                      initialDelaySeconds: 15
+                                      periodSeconds: 15
+                                      timeoutSeconds: 2
+                                      failureThreshold: 3
+                                    readinessProbe:
+                                      httpGet:
+                                        path: /ready
+                                        port: http
+                                      initialDelaySeconds: 10
+                                      periodSeconds: 10
+                                      timeoutSeconds: 2
+                                      failureThreshold: 3
+                                    resources:
+                                      requests:
+                                        cpu: "100m"
+                                        memory: "256Mi"
+                                      limits:
+                                        cpu: "500m"
+                                        memory: "512Mi"                                        # =========================
+                                        # NAMESPACE (if not exists)
+                                        # =========================
+                                        apiVersion: v1
+                                        kind: Namespace
+                                        metadata:
+                                          name: backend
+                                        ---
+                                        # =========================
+                                        # AUTH SERVICE CONFIG & SECRETS
+                                        # =========================
+                                        apiVersion: v1
+                                        kind: ConfigMap
+                                        metadata:
+                                          name: auth-service-config
+                                          namespace: backend
+                                        data:
+                                          # Non‑secret configuration (plain text)
+                                          NODE_ENV: "production"
+                                          PORT: "4001"
+                                          # Placeholder – real value should go into Secret (see below)
+                                          MONGO_DB_NAME: "auth-db"
+                                        ---
+                                        apiVersion: v1
+                                        kind: Secret
+                                        metadata:
+                                          name: auth-service-secret
+                                          namespace: backend
+                                        type: Opaque
+                                        data:
+                                          # PLACEHOLDER VALUES – REPLACE WITH REAL BASE64 ENCODED SECRETS
+                                          # echo -n 'mongodb://user:pass@host:27017/auth-db' | base64
+                                          MONGO_URI: "BASE64_MONGO_URI"
+                                          # echo -n 'your-jwt-access-secret' | base64
+                                          JWT_ACCESS_SECRET: "BASE64_JWT_ACCESS_SECRET"
+                                          # echo -n 'your-jwt-refresh-secret' | base64
+                                          JWT_REFRESH_SECRET: "BASE64_JWT_REFRESH_SECRET"
+                                          # echo -n 'redis://user:pass@host:6379/0' | base64
+                                          REDIS_URL: "BASE64_REDIS_URL"
+                                        ---
+                                        apiVersion: apps/v1
+                                        kind: Deployment
+                                        metadata:
+                                          name: auth-service
+                                          namespace: backend
+                                          labels:
+                                            app: auth-service
+                                        spec:
+                                          replicas: 2
+                                          selector:
+                                            matchLabels:
+                                              app: auth-service
+                                          template:
+                                            metadata:
+                                              labels:
+                                                app: auth-service
+                                            spec:
+                                              containers:
+                                                - name: auth-service
+                                                  image: your-docker-registry/auth-service:latest
+                                                  imagePullPolicy: IfNotPresent
+                                                  ports:
+                                                    - containerPort: 4001
+                                                      name: http
+                                                  envFrom:
+                                                    - configMapRef:
+                                                        name: auth-service-config
+                                                    - secretRef:
+                                                        name: auth-service-secret
+                                                  livenessProbe:
+                                                    httpGet:
+                                                      path: /health
+                                                      port: http
+                                                    initialDelaySeconds: 15
+                                                    periodSeconds: 15
+                                                    timeoutSeconds: 2
+                                                    failureThreshold: 3
+                                                  readinessProbe:
+                                                    httpGet:
+                                                      path: /ready
+                                                      port: http
+                                                    initialDelaySeconds: 10
+                                                    periodSeconds: 10
+                                                    timeoutSeconds: 2
+                                                    failureThreshold: 3
+                                                  resources:
+                                                    requests:
+                                                      cpu: "100m"
+                                                      memory: "256Mi"
+                                                    limits:
+                                                      cpu: "500m"
+                                                      memory: "512Mi"
+                                        ---
+                                        apiVersion: v1
+                                        kind: Service
+                                        metadata:
+                                          name: auth-service
+                                          namespace: backend
+                                          labels:
+                                            app: auth-service
+                                        spec:
+                                          type: ClusterIP
+                                          selector:
+                                            app: auth-service
+                                          ports:
+                                            - name: http
+                                              port: 4001
+                                              targetPort: http
+                                        
+                                        ---
+                                        # =========================
+                                        # INVENTORY SERVICE CONFIG & SECRETS
+                                        # =========================
+                                        apiVersion: v1
+                                        kind: ConfigMap
+                                        metadata:
+                                          name: inventory-service-config
+                                          namespace: backend
+                                        data:
+                                          NODE_ENV: "production"
+                                          PORT: "3000"
+                                          # These are non‑secret URLs / names – can be plain text
+                                          ANALYTICS_SERVICE_URL: "http://analytics-service.backend.svc.cluster.local:4002"
+                                          AUTH_SERVICE_URL: "http://auth-service.backend.svc.cluster.local:4001"
+                                          INVENTORY_DB_NAME: "inventory-db"
+                                        ---
+                                        apiVersion: v1
+                                        kind: Secret
+                                        metadata:
+                                          name: inventory-service-secret
+                                          namespace: backend
+                                        type: Opaque
+                                        data:
+                                          # PLACEHOLDER VALUES – REPLACE WITH REAL BASE64 ENCODED SECRETS
+                                          # echo -n 'mongodb://user:pass@host:27017/inventory-db' | base64
+                                          MONGO_URI: "BASE64_MONGO_URI"
+                                          # echo -n 'your-jwt-access-secret' | base64
+                                          JWT_ACCESS_SECRET: "BASE64_JWT_ACCESS_SECRET"
+                                          # echo -n 'your-jwt-refresh-secret' | base64
+                                          JWT_REFRESH_SECRET: "BASE64_JWT_REFRESH_SECRET"
+                                          # echo -n 'redis://user:pass@host:6379/0' | base64
+                                          REDIS_URL: "BASE64_REDIS_URL"
+                                        ---
+                                        apiVersion: apps/v1
+                                        kind: Deployment
+                                        metadata:
+                                          name: inventory-service
+                                          namespace: backend
+                                          labels:
+                                            app: inventory-service
+                                        spec:
+                                          replicas: 2
+                                          selector:
+                                            matchLabels:
+                                              app: inventory-service
+                                          template:
+                                            metadata:
+                                              labels:
+                                                app: inventory-service
+                                            spec:
+                                              containers:
+                                                - name: inventory-service
+                                                  image: your-docker-registry/inventory-service:latest
+                                                  imagePullPolicy: IfNotPresent
+                                                  ports:
+                                                    - containerPort: 3000
+                                                      name: http
+                                                  envFrom:
+                                                    - configMapRef:
+                                                        name: inventory-service-config
+                                                    - secretRef:
+                                                        name: inventory-service-secret
+                                                  livenessProbe:
+                                                    httpGet:
+                                                      path: /health
+                                                      port: http
+                                                    initialDelaySeconds: 15
+                                                    periodSeconds: 15
+                                                    timeoutSeconds: 2
+                                                    failureThreshold: 3
+                                                  readinessProbe:
+                                                    httpGet:
+                                                      path: /ready
+                                                      port: http
+                                                    initialDelaySeconds: 10
+                                                    periodSeconds: 10
+                                                    timeoutSeconds: 2
+                                                    failureThreshold: 3
+                                                  resources:
+                                                    requests:
+                                                      cpu: "100m"
+                                                      memory: "256Mi"
+                                                    limits:
+                                                      cpu: "500m"
+                                                      memory: "512Mi"
+                                        ---
+                                        apiVersion: v1
+                                        kind: Service
+                                        metadata:
+                                          name: inventory-service
+                                          namespace: backend
+                                          labels:
+                                            app: inventory-service
+                                        spec:
+                                          type: ClusterIP
+                                          selector:
+                                            app: inventory-service
+                                          ports:
+                                            - name: http
+                                              port: 3000
+                                              targetPort: http
+                                        
+                                        ---
+                                        # =========================
+                                        # ANALYTICS SERVICE CONFIG & SECRETS
+                                        # =========================
+                                        apiVersion: v1
+                                        kind: ConfigMap
+                                        metadata:
+                                          name: analytics-service-config
+                                          namespace: backend
+                                        data:
+                                          NODE_ENV: "production"
+                                          PORT: "4002"
+                                          ANALYTICS_DB_NAME: "analytics-db"
+                                        ---
+                                        apiVersion: v1
+                                        kind: Secret
+                                        metadata:
+                                          name: analytics-service-secret
+                                          namespace: backend
+                                        type: Opaque
+                                        data:
+                                          # PLACEHOLDER VALUES – REPLACE WITH REAL BASE64 ENCODED SECRETS
+                                          # echo -n 'mongodb://user:pass@host:27017/analytics-db' | base64
+                                          MONGO_URI: "BASE64_MONGO_URI"
+                                          # echo -n 'your-jwt-access-secret' | base64
+                                          JWT_ACCESS_SECRET: "BASE64_JWT_ACCESS_SECRET"
+                                          # echo -n 'redis://user:pass@host:6379/1' | base64 (if analytics uses redis)
+                                          REDIS_URL: "BASE64_REDIS_URL"
+                                        ---
+                                        apiVersion: apps/v1
+                                        kind: Deployment
+                                        metadata:
+                                          name: analytics-service
+                                          namespace: backend
+                                          labels:
+                                            app: analytics-service
+                                        spec:
+                                          replicas: 2
+                                          selector:
+                                            matchLabels:
+                                              app: analytics-service
+                                          template:
+                                            metadata:
+                                              labels:
+                                                app: analytics-service
+                                            spec:
+                                              containers:
+                                                - name: analytics-service
+                                                  image: your-docker-registry/analytics-service:latest
+                                                  imagePullPolicy: IfNotPresent
+                                                  ports:
+                                                    - containerPort: 4002
+                                                      name: http
+                                                  envFrom:
+                                                    - configMapRef:
+                                                        name: analytics-service-config
+                                                    - secretRef:
+                                                        name: analytics-service-secret
+                                                  livenessProbe:
+                                                    httpGet:
+                                                      path: /health
+                                                      port: http
+                                                    initialDelaySeconds: 15
+                                                    periodSeconds: 15
+                                                    timeoutSeconds: 2
+                                                    failureThreshold: 3
+                                                  readinessProbe:
+                                                    httpGet:
+                                                      path: /ready
+                                                      port: http
+                                                    initialDelaySeconds: 10
+                                                    periodSeconds: 10
+                                                    timeoutSeconds: 2
+                                                    failureThreshold: 3
+                                                  resources:
+                                                    requests:
+                                                      cpu: "100m"
+                                                      memory: "256Mi"
+                                                    limits:
+                                                      cpu: "500m"
+                                                      memory: "512Mi"
