@@ -25,6 +25,7 @@ spec:
         prometheus.io/path: "/metrics"
         prometheus.io/port: "3000"
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
         - name: auth-service
           image: auth-service:latest
@@ -37,6 +38,10 @@ spec:
                 name: auth-service-config
             - secretRef:
                 name: auth-service-secret
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
           livenessProbe:
             httpGet:
               path: /health
@@ -50,7 +55,7 @@ spec:
               path: /ready
               port: http
             initialDelaySeconds: 10
-            periodSeconds: 10
+            periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
           resources:

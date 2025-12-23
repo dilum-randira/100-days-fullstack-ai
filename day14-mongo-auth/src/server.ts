@@ -2,18 +2,78 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-import app from './app';
-import { connectDB } from './db';
+import http from 'http';
+import type { Socket } from 'net';
+import app, { markShuttingDown } from './app';
+import { connectDB, closeDB } from './db';
 import { config } from './config';
 
 const PORT = config.port;
 
+type ShutdownState = {
+  isShuttingDown: boolean;
+  connections: Set<Socket>;
+};
+
+const shutdownState: ShutdownState = {
+  isShuttingDown: false,
+  connections: new Set(),
+};
+
 const start = async (): Promise<void> => {
   await connectDB();
 
-  app.listen(PORT, () => {
-    console.log(`🚀 Day 14 Auth API running on http://localhost:${PORT}`);
+  const server = http.createServer(app);
+
+  server.on('connection', (socket: Socket) => {
+    shutdownState.connections.add(socket);
+    socket.on('close', () => shutdownState.connections.delete(socket));
   });
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Day 14 Auth API running on http://0.0.0.0:${PORT}`);
+  });
+
+  const shutdown = async (signal: string): Promise<void> => {
+    if (shutdownState.isShuttingDown) return;
+    shutdownState.isShuttingDown = true;
+
+    console.log('server.shutdown.initiated', { signal });
+    markShuttingDown();
+
+    server.close((err?: Error) => {
+      if (err) {
+        console.error('server.shutdown.http_error', { message: err.message });
+      } else {
+        console.log('server.shutdown.http_closed');
+      }
+    });
+
+    const drainTimeoutMs = Number(process.env.SHUTDOWN_DRAIN_TIMEOUT_MS || 25000);
+    const hardKillTimeout = setTimeout(() => {
+      console.log('server.shutdown.force_close_connections', { openConnections: shutdownState.connections.size });
+      for (const socket of shutdownState.connections) {
+        socket.destroy();
+      }
+    }, drainTimeoutMs);
+    (hardKillTimeout as any).unref?.();
+
+    try {
+      await closeDB();
+      console.log('server.shutdown.db_closed');
+    } catch (err: any) {
+      console.error('server.shutdown.db_error', { message: err?.message || String(err) });
+    }
+
+    const done = setTimeout(() => {
+      console.log('server.shutdown.completed');
+      process.exit(0);
+    }, 250);
+    (done as any).unref?.();
+  };
+
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 };
 
 start().catch((err) => {

@@ -97,7 +97,18 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
+// Readiness gate: flipped off during SIGTERM shutdown to stop K8s routing traffic.
+let isShuttingDown = false;
+export const markShuttingDown = (): void => {
+  isShuttingDown = true;
+};
+
 app.get('/ready', (_req: Request, res: Response) => {
+  if (isShuttingDown) {
+    res.status(503).json({ ready: false, shuttingDown: true });
+    return;
+  }
+
   const state = mongoose.connection.readyState;
   const ready = state === 1; // connected
   res.status(ready ? 200 : 503).json({ ready, state });

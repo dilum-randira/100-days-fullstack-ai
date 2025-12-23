@@ -26,6 +26,7 @@ spec:
         prometheus.io/path: "/metrics"
         prometheus.io/port: "3000"
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
         - name: inventory-service
           image: inventory-service:latest
@@ -38,6 +39,11 @@ spec:
                 name: inventory-service-config
             - secretRef:
                 name: inventory-service-secret
+          lifecycle:
+            preStop:
+              exec:
+                # Delay termination so endpoints can flip readiness to false and in-flight requests can drain.
+                command: ["/bin/sh", "-c", "sleep 10"]
           livenessProbe:
             httpGet:
               path: /health
@@ -51,7 +57,7 @@ spec:
               path: /ready
               port: http
             initialDelaySeconds: 10
-            periodSeconds: 10
+            periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
           resources:

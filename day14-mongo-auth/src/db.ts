@@ -12,3 +12,10 @@ export const connectDB = async (): Promise<void> => {
     process.exit(1);
   }
 };
+
+export const closeDB = async (): Promise<void> => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.connection.close();
+    console.log('MongoDB connection closed gracefully');
+  }
+};
