@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: backend
+  labels:
+    app: auth-service
+data:
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  CORS_ORIGINS: "https://example.com,https://admin.example.com"
+  FEATURE_FLAGS: "auth.login,auth.refresh"

@@ -1,0 +1,102 @@
+{
+  "title": "Backend (Requests / Errors / Pod Resources)",
+  "uid": "backend-k8s-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "10s",
+  "tags": ["kubernetes", "backend"],
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "label": "Namespace",
+        "hide": 0,
+        "datasource": { "type": "prometheus", "uid": "PROMETHEUS" },
+        "query": "label_values(kube_pod_info, namespace)",
+        "current": { "text": "backend", "value": "backend" }
+      },
+      {
+        "name": "app",
+        "type": "query",
+        "label": "App",
+        "hide": 0,
+        "datasource": { "type": "prometheus", "uid": "PROMETHEUS" },
+        "query": "label_values(kube_pod_labels{namespace=\"$namespace\"}, label_app)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PROMETHEUS" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{namespace=\"$namespace\"}[5m]))",
+          "legendFormat": "all"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (service) (rate(http_requests_total{namespace=\"$namespace\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "req/s" }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "title": "Error Rate (5xx req/s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PROMETHEUS" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{namespace=\"$namespace\",code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (service) (rate(http_requests_total{namespace=\"$namespace\",code=~\"5..\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "req/s" }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "title": "Pod CPU Usage (millicores)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PROMETHEUS" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",container!=\"\",image!=\"\"}[5m]) * 1000)",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "m" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "title": "Pod Memory Usage (MiB)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "PROMETHEUS" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (container_memory_usage_bytes{namespace=\"$namespace\",container!=\"\",image!=\"\"}) / 1024 / 1024",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "MiB" }, "overrides": [] }
+    }
+  ]
+}
