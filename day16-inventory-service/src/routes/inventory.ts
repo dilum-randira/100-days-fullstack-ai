@@ -3,6 +3,7 @@ import * as inventoryController from '../controllers/inventoryController';
 import { requireFeature } from '../middleware/featureFlags';
 import { exportInventory, exportLogs, exportBatches } from '../services/exportService';
 import { requireShardKey } from '../middleware/shardKey';
+import { idempotency } from '../middleware/idempotency';
 
 const router = Router();
 
@@ -20,9 +21,21 @@ router.post('/:id/restore', requireShardKey, inventoryController.restoreItem);
 router.get('/export/inventory', requireShardKey, exportInventory);
 router.get('/export/logs', requireShardKey, exportLogs);
 router.get('/export/batches', requireShardKey, exportBatches);
-router.patch('/:id/adjust', requireShardKey, requireFeature('inventory.adjust'), inventoryController.adjustInventoryQuantity);
+router.patch(
+  '/:id/adjust',
+  requireShardKey,
+  idempotency({ required: true }),
+  requireFeature('inventory.adjust'),
+  inventoryController.adjustInventoryQuantity,
+);
 
 // QC-related routes (example: webhook)
-router.post('/qc/webhook', requireShardKey, requireFeature('qc.webhook'), inventoryController.qcWebhookHandler);
+router.post(
+  '/qc/webhook',
+  requireShardKey,
+  idempotency({ required: true }),
+  requireFeature('qc.webhook'),
+  inventoryController.qcWebhookHandler,
+);
 
 export default router;

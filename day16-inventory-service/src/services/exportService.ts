@@ -47,8 +47,19 @@ const writeCsvRow = (res: Response, fields: (string | number | boolean | null | 
   res.write(escaped.join(',') + '\n');
 };
 
+const requireIdempotencyKey = (req: Request, res: Response): boolean => {
+  const key = (req.headers['idempotency-key'] as string | undefined)?.trim();
+  if (!key) {
+    res.status(400).json({ success: false, error: 'IdempotencyKeyRequired' });
+    return false;
+  }
+  return true;
+};
+
 export const exportInventory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    if (!requireIdempotencyKey(req, res)) return;
+
     if (!isAdmin(req)) {
       res.status(403).json({ success: false, error: 'Forbidden' });
       return;
@@ -102,6 +113,8 @@ export const exportInventory = async (req: Request, res: Response, next: NextFun
 
 export const exportLogs = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    if (!requireIdempotencyKey(req, res)) return;
+
     if (!isAdmin(req)) {
       res.status(403).json({ success: false, error: 'Forbidden' });
       return;
@@ -149,6 +162,8 @@ export const exportLogs = async (req: Request, res: Response, next: NextFunction
 
 export const exportBatches = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    if (!requireIdempotencyKey(req, res)) return;
+
     if (!isAdmin(req)) {
       res.status(403).json({ success: false, error: 'Forbidden' });
       return;

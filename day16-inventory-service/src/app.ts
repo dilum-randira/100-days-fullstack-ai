@@ -15,6 +15,8 @@ import { swaggerSpec } from './docs/swagger';
 import chaosRouter from './routes/chaos';
 import { chaosMiddleware } from './controllers/chaosController';
 import { shardKeyMiddleware } from './middleware/shardKey';
+import { requestIdMiddleware } from './middleware/requestId';
+import { idempotency } from './middleware/idempotency';
 import { getDbDegradedState } from './db';
 import { getCacheStats } from './utils/cache/cache';
 import { getDbRouterMetrics } from './db/router';
@@ -64,6 +66,9 @@ app.use(
 
 // JSON body limit 100kb
 app.use(bodyParser.json({ limit: '100kb' }));
+
+// Request/Correlation IDs (must run before idempotency logging)
+app.use(requestIdMiddleware);
 
 // Shard key extraction (tenant routing)
 app.use(shardKeyMiddleware);
@@ -188,6 +193,19 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/chaos', chaosRouter);
 
 app.use('/api/ai', aiRouter);
+
+// Idempotency protected routes (do NOT change response formats)
+app.use('/api/v1/inventory/:id/adjust', idempotency({ required: true }));
+app.use('/api/v2/inventory/:id/adjust', idempotency({ required: true }));
+app.use('/api/inventory/:id/adjust', idempotency({ required: true }));
+
+app.use('/api/v1/inventory/qc/webhook', idempotency({ required: true }));
+app.use('/api/v2/inventory/qc/webhook', idempotency({ required: true }));
+app.use('/api/inventory/qc/webhook', idempotency({ required: true }));
+
+app.use('/api/v1/inventory/export', idempotency({ required: true }));
+app.use('/api/v2/inventory/export', idempotency({ required: true }));
+app.use('/api/inventory/export', idempotency({ required: true }));
 
 // API versioning
 app.use('/api/v1/inventory', inventoryRouter);

@@ -7,6 +7,7 @@ import type { Socket } from 'net';
 import app, { markShuttingDown } from './app';
 import { connectDB, closeDB } from './db';
 import { config } from './config';
+import { startIdempotencyCleanupJob } from './jobs/idempotencyCleanup';
 
 const PORT = config.port;
 
@@ -22,6 +23,9 @@ const shutdownState: ShutdownState = {
 
 const start = async (): Promise<void> => {
   await connectDB();
+
+  // Background housekeeping for idempotency keys
+  startIdempotencyCleanupJob();
 
   const server = http.createServer(app);
 

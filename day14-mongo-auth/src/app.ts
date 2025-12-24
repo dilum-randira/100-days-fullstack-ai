@@ -14,6 +14,7 @@ import { swaggerSpec } from './docs/swagger';
 import { getDbDegradedState } from './db';
 import { getDbRouterMetrics } from './db/router';
 import { adaptiveRateLimit, getAdaptiveRateLimitState } from './middleware/adaptiveRateLimit';
+import { idempotency } from './middleware/idempotency';
 
 let totalRequests = 0;
 let errorCount = 0;

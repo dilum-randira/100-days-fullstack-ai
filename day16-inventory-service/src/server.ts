@@ -11,6 +11,7 @@ import { logger } from './utils/logger';
 import { redisClient } from './utils/redis';
 import { config } from './config';
 import { initSocket } from './sockets';
+import { startIdempotencyCleanupJob } from './jobs/idempotencyCleanup';
 
 const PORT = config.port;
 const NODE_ENV = config.nodeEnv;
@@ -22,6 +23,9 @@ const start = async (): Promise<void> => {
     logger.error('server.start.db_error', { message: err.message });
     process.exit(1);
   }
+
+  // Background housekeeping for idempotency keys
+  startIdempotencyCleanupJob();
 
   try {
     await inventoryQueueScheduler.waitUntilReady();

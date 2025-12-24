@@ -22,7 +22,7 @@ const consoleFormat =
     : winston.format.combine(
         baseFormat,
         winston.format.colorize(),
-        winston.format.printf((info) => {
+        winston.format.printf((info: winston.Logform.TransformableInfo) => {
           const { timestamp, level, message, ...meta } = info;
           const metaString = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
           return `${timestamp} [${level}]: ${message}${metaString}`;
@@ -36,6 +36,14 @@ export const logger = winston.createLogger({
     new winston.transports.Console({ format: consoleFormat }),
   ],
 });
+
+export const withRequestContext = (
+  requestId?: string,
+  correlationId?: string,
+): winston.Logger => {
+  if (!requestId && !correlationId) return logger;
+  return logger.child({ requestId, correlationId });
+};
 
 export const httpLoggerStream = {
   write: (message: string) => {
