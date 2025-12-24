@@ -1,6 +1,6 @@
 import express from 'express';
 import { config } from './config';
-import { connectDB } from './db';
+import { connectDB, getDbDegradedState } from './db';
 import routes from './routes';
 import http from 'http';
 import mongoose from 'mongoose';
@@ -18,28 +18,59 @@ app.use((req, res, next) => {
   (req as any).requestId = requestId;
   (req as any).correlationId = correlationId;
 
-  res.setHeader('x-request-id', requestId || '');
-  if (correlationId) {
-    res.setHeader('x-correlation-id', correlationId);
-  }
+  if (requestId) res.setHeader('x-request-id', requestId);
+  if (correlationId) res.setHeader('x-correlation-id', correlationId);
 
   next();
 });
 
-// Liveness
+// Liveness: OK if analytics reads are possible (secondaryPreferred).
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  const db = getDbDegradedState();
+  if (!db.canRead) {
+    res.status(503).json({ status: 'degraded', canRead: false, canWrite: false, db, uptime: process.uptime() });
+    return;
+  }
+  res.json({ status: 'ok', canRead: db.canRead, canWrite: db.canWrite, db, uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
-// Readiness (fails during shutdown)
+// Readiness (fails during shutdown) - analytics can be ready if reads work.
 app.get('/ready', (_req, res) => {
   if (isShuttingDown) {
     res.status(503).json({ ready: false, shuttingDown: true });
     return;
   }
-  const state = mongoose.connection.readyState;
-  const ready = state === 1;
-  res.status(ready ? 200 : 503).json({ ready, state });
+
+  const db = getDbDegradedState();
+  const ready = db.canRead;
+  res.status(ready ? 200 : 503).json({ ready, degraded: false, db, state: mongoose.connection.readyState });
+});
+
+// Metrics endpoints
+app.get('/metrics/ha', (_req, res) => {
+  const db = getDbDegradedState();
+  res.json({
+    service: 'analytics-service',
+    db: {
+      primaryAvailable: db.canWrite,
+      readOnlyAvailable: db.canRead,
+      failover: {
+        lastDisconnectedAt: db.lastDisconnectedAt,
+        lastReconnectedAt: db.lastReconnectedAt,
+        lastError: db.lastError,
+      },
+    },
+  });
+});
+
+app.get('/metrics/db', (_req, res) => {
+  const db = getDbDegradedState();
+  res.json({ service: 'analytics-service', ...db });
+});
+
+app.get('/metrics/cache', (_req, res) => {
+  // analytics-service is DB-only in this repo; endpoint included for uniform dashboards.
+  res.json({ service: 'analytics-service', l1: { hits: 0, misses: 0 }, l2: { hits: 0, misses: 0 } });
 });
 
 app.use('/api/analytics', routes);

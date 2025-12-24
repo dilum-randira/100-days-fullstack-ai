@@ -1,8 +1,105 @@
 import mongoose from 'mongoose';
 import { config } from './config';
 
+type FailoverState = {
+  lastDisconnectedAt?: Date;
+  lastReconnectedAt?: Date;
+  lastError?: string;
+};
+
+const failoverState: FailoverState = {};
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const withRetryWrites = (uri: string, enabled: boolean): string => {
+  if (!enabled) return uri;
+  return uri.includes('retryWrites=') ? uri : `${uri}${uri.includes('?') ? '&' : '?'}retryWrites=true`;
+};
+
+export const getDbDegradedState = (): {
+  canRead: boolean;
+  canWrite: boolean;
+  state: number;
+  lastDisconnectedAt?: string;
+  lastReconnectedAt?: string;
+  lastError?: string;
+} => {
+  const state = mongoose.connection.readyState;
+  const canRead = state === 1;
+  const canWrite = state === 1;
+
+  return {
+    canRead,
+    canWrite,
+    state,
+    lastDisconnectedAt: failoverState.lastDisconnectedAt?.toISOString(),
+    lastReconnectedAt: failoverState.lastReconnectedAt?.toISOString(),
+    lastError: failoverState.lastError,
+  };
+};
+
+let eventsBound = false;
+const bindFailoverLogging = (): void => {
+  if (eventsBound) return;
+  eventsBound = true;
+
+  mongoose.connection.on('connected', () => {
+    failoverState.lastReconnectedAt = new Date();
+    console.log('analytics.db.connected', {
+      host: mongoose.connection.host,
+      name: mongoose.connection.name,
+    });
+  });
+
+  mongoose.connection.on('disconnected', () => {
+    failoverState.lastDisconnectedAt = new Date();
+    console.log('analytics.db.disconnected');
+  });
+
+  mongoose.connection.on('reconnected', () => {
+    failoverState.lastReconnectedAt = new Date();
+    console.log('analytics.db.reconnected');
+  });
+
+  mongoose.connection.on('error', (err) => {
+    failoverState.lastError = err instanceof Error ? err.message : String(err);
+    console.error('analytics.db.error', { message: failoverState.lastError });
+  });
+
+  mongoose.connection.on('fullsetup', () => {
+    console.log('analytics.db.replicaSet.fullsetup');
+  });
+};
+
+const MAX_RETRIES = 8;
+const BASE_DELAY_MS = 750;
+
 export const connectDB = async (): Promise<void> => {
-  await mongoose.connect(config.mongoUri, {
-    readPreference: 'secondaryPreferred',
-  } as any);
+  bindFailoverLogging();
+
+  const uri = withRetryWrites(config.mongo.uri || config.mongoUri, config.mongo.retryWrites);
+
+  let attempt = 0;
+  while (attempt < MAX_RETRIES) {
+    attempt += 1;
+    try {
+      await mongoose.connect(uri, {
+        replicaSet: config.mongo.replicaSet,
+        readPreference: config.mongo.readPreference,
+        maxPoolSize: config.mongo.maxPoolSize,
+        connectTimeoutMS: config.mongo.connectTimeoutMs,
+        serverSelectionTimeoutMS: config.mongo.serverSelectionTimeoutMs,
+        socketTimeoutMS: config.mongo.socketTimeoutMs,
+      } as any);
+
+      return;
+    } catch (err: any) {
+      failoverState.lastError = err?.message || String(err);
+      console.error('analytics.db.connect.error', { attempt, message: failoverState.lastError });
+
+      if (attempt >= MAX_RETRIES) throw err;
+      const backoff = Math.min(8000, BASE_DELAY_MS * 2 ** (attempt - 1));
+      await sleep(backoff);
+    }
+  }
 };
