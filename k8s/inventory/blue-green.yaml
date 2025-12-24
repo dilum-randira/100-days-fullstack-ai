@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-blue
+  namespace: backend
+  labels:
+    app: inventory-service
+    color: blue
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: inventory-service
+      color: blue
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        color: blue
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3000"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: inventory-service
+          image: inventory-service:blue
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: inventory-service-config
+            - secretRef:
+                name: inventory-service-secret
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-green
+  namespace: backend
+  labels:
+    app: inventory-service
+    color: green
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: inventory-service
+      color: green
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        color: green
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3000"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: inventory-service
+          image: inventory-service:green
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: inventory-service-config
+            - secretRef:
+                name: inventory-service-secret
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: backend
+  labels:
+    app: inventory-service
+spec:
+  type: ClusterIP
+  selector:
+    app: inventory-service
+    color: blue
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+# Switch procedure (no pod restarts required):
+# 1) Validate both environments are ready:
+#    kubectl -n backend get pods -l app=inventory-service,color=blue
+#    kubectl -n backend get pods -l app=inventory-service,color=green
+#    (pods must have READY 1/1 and readinessProbe must be passing)
+# 2) Switch service selector from blue->green:
+#    kubectl -n backend patch service inventory-service -p '{"spec":{"selector":{"app":"inventory-service","color":"green"}}}'
+# 3) Switch back (rollback): patch selector back to blue.

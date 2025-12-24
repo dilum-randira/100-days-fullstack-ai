@@ -1,0 +1,210 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service-stable
+  namespace: backend
+  labels:
+    app: inventory-service
+    track: stable
+spec:
+  type: ClusterIP
+  selector:
+    app: inventory-service
+    version: v1
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service-canary
+  namespace: backend
+  labels:
+    app: inventory-service
+    track: canary
+spec:
+  type: ClusterIP
+  selector:
+    app: inventory-service
+    version: v2
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-v1
+  namespace: backend
+  labels:
+    app: inventory-service
+    version: v1
+    track: stable
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: inventory-service
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        version: v1
+        track: stable
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3000"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: inventory-service
+          image: inventory-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: inventory-service-config
+            - secretRef:
+                name: inventory-service-secret
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-v2
+  namespace: backend
+  labels:
+    app: inventory-service
+    version: v2
+    track: canary
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: inventory-service
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+        version: v2
+        track: canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "3000"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: inventory-service
+          image: inventory-service:v2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: inventory-service-config
+            - secretRef:
+                name: inventory-service-secret
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: inventory-ingress-canary
+  namespace: backend
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+    # Canary health/metrics: Prometheus will scrape /metrics from canary pods via pod annotations.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  rules:
+    - host: your-backend.example.com
+      http:
+        paths:
+          - path: /api/inventory
+            pathType: Prefix
+            backend:
+              service:
+                name: inventory-service-canary
+                port:
+                  number: 3000
+---
+# Rollback (scale canary to zero):
+# kubectl -n backend scale deployment/inventory-v2 --replicas=0
+# Or set canary weight to 0 on this Ingress.
