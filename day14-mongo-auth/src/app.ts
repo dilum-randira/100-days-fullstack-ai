@@ -12,6 +12,7 @@ import mongoose from 'mongoose';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
 import { getDbDegradedState } from './db';
+import { getDbRouterMetrics } from './db/router';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -167,7 +168,8 @@ app.get('/metrics/ha', (_req: Request, res: Response) => {
 
 app.get('/metrics/db', (_req: Request, res: Response) => {
   const db = getDbDegradedState();
-  res.json({ service: 'auth-service', ...db });
+  const router = getDbRouterMetrics();
+  res.json({ service: 'auth-service', ...db, router });
 });
 
 app.get('/metrics/cache', (_req: Request, res: Response) => {

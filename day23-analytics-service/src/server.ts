@@ -1,6 +1,7 @@
 import express from 'express';
 import { config } from './config';
 import { connectDB, getDbDegradedState } from './db';
+import { getDbRouterMetrics } from './db/router';
 import routes from './routes';
 import http from 'http';
 import mongoose from 'mongoose';
@@ -65,7 +66,8 @@ app.get('/metrics/ha', (_req, res) => {
 
 app.get('/metrics/db', (_req, res) => {
   const db = getDbDegradedState();
-  res.json({ service: 'analytics-service', ...db });
+  const router = getDbRouterMetrics();
+  res.json({ service: 'analytics-service', ...db, router });
 });
 
 app.get('/metrics/cache', (_req, res) => {

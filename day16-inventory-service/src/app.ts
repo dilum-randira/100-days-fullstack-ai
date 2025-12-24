@@ -17,6 +17,7 @@ import { chaosMiddleware } from './controllers/chaosController';
 import { shardKeyMiddleware } from './middleware/shardKey';
 import { getDbDegradedState } from './db';
 import { getCacheStats } from './utils/cache/cache';
+import { getDbRouterMetrics } from './db/router';
 
 // simple in-memory metrics
 let totalRequests = 0;
@@ -165,7 +166,8 @@ app.get('/metrics/ha', (_req: Request, res: Response) => {
 
 app.get('/metrics/db', (_req: Request, res: Response) => {
   const db = getDbDegradedState();
-  res.json({ service: 'inventory-service', ...db });
+  const router = getDbRouterMetrics();
+  res.json({ service: 'inventory-service', ...db, router });
 });
 
 app.get('/metrics/cache', (_req: Request, res: Response) => {
