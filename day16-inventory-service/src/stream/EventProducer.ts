@@ -118,6 +118,27 @@ export class EventProducer {
     });
   }
 
+  public publishWithId<TPayload>(
+    eventId: string,
+    input: Omit<StreamEvent<TPayload>, 'eventId' | 'occurredAt' | 'version'> & { version?: 1 },
+    ctx?: { requestId?: string; correlationId?: string },
+  ): void {
+    const log = withRequestContext(ctx?.requestId, ctx?.correlationId);
+
+    const event: StreamEvent<TPayload> = {
+      eventId,
+      eventType: input.eventType,
+      version: 1,
+      organizationId: input.organizationId,
+      payload: input.payload,
+      occurredAt: new Date().toISOString(),
+    };
+
+    queueMicrotask(() => {
+      void this.publishInternal(event, log);
+    });
+  }
+
   private async publishInternal(event: StreamEvent, log: ReturnType<typeof withRequestContext>): Promise<PublishResult> {
     tickRates();
 

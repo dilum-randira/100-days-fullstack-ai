@@ -12,6 +12,7 @@ import { redisClient } from './utils/redis';
 import { config } from './config';
 import { initSocket } from './sockets';
 import { startIdempotencyCleanupJob } from './jobs/idempotencyCleanup';
+import { startOutboxDispatcher } from './outbox/dispatcher';
 
 const PORT = config.port;
 const NODE_ENV = config.nodeEnv;
@@ -26,6 +27,9 @@ const start = async (): Promise<void> => {
 
   // Background housekeeping for idempotency keys
   startIdempotencyCleanupJob();
+
+  // Transactional outbox dispatcher
+  startOutboxDispatcher();
 
   try {
     await inventoryQueueScheduler.waitUntilReady();

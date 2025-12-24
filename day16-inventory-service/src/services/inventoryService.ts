@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { enqueueInventoryJobs } from '../queues/inventoryQueue';
 import { emitRealtimeEvent } from '../sockets';
 import { eventBus, DOMAIN_EVENTS } from '../events/EventBus';
+import { writeOutboxEvent } from '../outbox/writeOutboxEvent';
 import { fetchInventorySummary, fetchTopItems, fetchTrendingItems } from './analyticsClient';
 import { cacheGet, cacheInvalidatePrefix, cacheSet } from '../utils/cache/cache';
 import { config } from '../config';
@@ -223,6 +224,19 @@ export const adjustQuantity = async (id: string, delta: number): Promise<IInvent
       ],
       { session },
     );
+
+    await writeOutboxEvent(session, {
+      aggregateType: 'InventoryItem',
+      aggregateId: String(item._id),
+      eventType: 'InventoryAdjusted',
+      payload: {
+        itemId: String(item._id),
+        oldQuantity,
+        newQuantity,
+        delta,
+        organizationId: (item as any).organizationId,
+      },
+    });
 
     await session.commitTransaction();
     logger.info('transaction.commit', { operation: 'adjustQuantity', itemId: String(item._id) });
