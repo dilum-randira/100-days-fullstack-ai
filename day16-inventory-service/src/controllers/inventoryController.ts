@@ -216,3 +216,21 @@ export const restoreItem = async (req: Request, res: Response, next: NextFunctio
     next(error);
   }
 };
+
+export const qcWebhookHandler = async (req: Request & ShardContext, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const organizationId = req.organizationId || (req.body as any).organizationId;
+
+    // Side-effect safe placeholder: accept webhook, log, and respond OK.
+    // Feature flag already protects this route.
+    res.status(200).json({
+      success: true,
+      data: {
+        received: true,
+        organizationId: organizationId || null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};

@@ -454,7 +454,11 @@ export const getTopItems = async () => {
   const cacheKey = 'analytics:inventory:top-items';
   const cached = await cacheGet<unknown>(cacheKey);
   if (cached) return cached;
-  return topItems;
+
+  const items = await fetchTopItems(10);
+  await cacheSet(cacheKey, items);
+
+  return items;
 };
 
 export const getTrendingItems = async () => {
