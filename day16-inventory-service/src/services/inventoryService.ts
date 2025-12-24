@@ -2,14 +2,14 @@ import mongoose from 'mongoose';
 import { InventoryItem, IInventoryItemDocument, InventoryStatus } from '../models/InventoryItem';
 import { isValidObjectId } from 'mongoose';
 import { InventoryLog, IInventoryLogDocument } from '../models/InventoryLog';
-import { redisClient } from '../utils/redis';
 import { logger } from '../utils/logger';
 import { enqueueInventoryJobs } from '../queues/inventoryQueue';
 import { emitRealtimeEvent } from '../sockets';
 import { eventBus, DOMAIN_EVENTS } from '../events/EventBus';
 import { fetchInventorySummary, fetchTopItems, fetchTrendingItems } from './analyticsClient';
+import { cacheGet, cacheInvalidatePrefix, cacheSet } from '../utils/cache/cache';
+import { config } from '../config';
 
-const CACHE_TTL_SECONDS = 60;
 const ANALYTICS_CACHE_TTL_SECONDS = 60;
 
 const buildCacheKey = (endpoint: string, params?: Record<string, unknown>): string => {
@@ -22,65 +22,20 @@ const buildCacheKey = (endpoint: string, params?: Record<string, unknown>): stri
   return `${base}:${JSON.stringify(sorted)}`;
 };
 
-const safeGetCache = async <T>(key: string): Promise<T | null> => {
-  if (!redisClient) return null;
-  try {
-    const raw = await redisClient.get(key);
-    if (!raw) {
-      logger.debug?.('cache.miss', { key });
-      return null;
-    }
-    logger.debug?.('cache.hit', { key });
-    return JSON.parse(raw) as T;
-  } catch (err: any) {
-    logger.error('cache.get.error', { key, message: err.message });
-    return null;
-  }
-};
-
-const safeSetCache = async (key: string, value: unknown): Promise<void> => {
-  if (!redisClient) return;
-  try {
-    await redisClient.set(key, JSON.stringify(value), 'EX', CACHE_TTL_SECONDS);
-  } catch (err: any) {
-    logger.error('cache.set.error', { key, message: err.message });
-  }
-};
-
-const cacheSet = async <T>(key: string, value: T): Promise<void> => {
-  if (!redisClient) return;
-  try {
-    await redisClient.set(key, JSON.stringify(value), 'EX', ANALYTICS_CACHE_TTL_SECONDS);
-  } catch (err: any) {
-    // best-effort cache
-  }
-};
-
-const cacheGet = async <T>(key: string): Promise<T | null> => {
-  if (!redisClient) return null;
-  try {
-    const raw = await redisClient.get(key);
-    if (!raw) return null;
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-};
-
 const clearInventoryCache = async (): Promise<void> => {
-  if (!redisClient) return;
-  try {
-    const keys = await redisClient.keys('inventory:*');
-    if (keys.length > 0) {
-      await redisClient.del(keys);
-      logger.info('cache.clear.inventory', { count: keys.length });
-    }
-  } catch (err: any) {
-    logger.error('cache.clear.error', { message: err.message });
+  await cacheInvalidatePrefix('inventory:');
+};
+
+const requireOrgInProd = (organizationId?: string): void => {
+  if (config.nodeEnv !== 'production') return;
+  if (!config.sharding.requiredInProd) return;
+  if (!organizationId) {
+    throw Object.assign(new Error('organizationId is required'), { statusCode: 400 });
   }
 };
 
 export interface InventoryFilter {
+  organizationId?: string;
   productName?: string;
   supplier?: string;
   location?: string;
@@ -96,18 +51,25 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 
 export const createItem = async (data: Partial<IInventoryItemDocument>): Promise<IInventoryItemDocument> => {
+  requireOrgInProd((data as any).organizationId);
+
   const item = new InventoryItem(data);
   await item.save();
   await clearInventoryCache();
   return item;
 };
 
-export const getItemById = async (id: string): Promise<IInventoryItemDocument> => {
+export const getItemById = async (id: string, organizationId?: string): Promise<IInventoryItemDocument> => {
+  requireOrgInProd(organizationId);
+
   if (!isValidObjectId(id)) {
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
   }
 
-  const item = await InventoryItem.findOne({ _id: id, isDeleted: { $ne: true } }).exec();
+  const query: Record<string, unknown> = { _id: id, isDeleted: { $ne: true } };
+  if (organizationId) query.organizationId = organizationId;
+
+  const item = await InventoryItem.findOne(query).exec();
   if (!item) {
     throw Object.assign(new Error('Item not found'), { statusCode: 404 });
   }
@@ -117,12 +79,18 @@ export const getItemById = async (id: string): Promise<IInventoryItemDocument> =
 export const updateItem = async (
   id: string,
   updates: Partial<IInventoryItemDocument>,
+  organizationId?: string,
 ): Promise<IInventoryItemDocument> => {
+  requireOrgInProd(organizationId);
+
   if (!isValidObjectId(id)) {
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
   }
 
-  const item = await InventoryItem.findByIdAndUpdate(id, { $set: updates }, {
+  const filter: Record<string, unknown> = { _id: id };
+  if (organizationId) filter.organizationId = organizationId;
+
+  const item = await InventoryItem.findOneAndUpdate(filter, { $set: updates }, {
     new: true,
     runValidators: true,
   }).exec();
@@ -135,13 +103,18 @@ export const updateItem = async (
   return item;
 };
 
-export const deleteItem = async (id: string): Promise<void> => {
+export const deleteItem = async (id: string, organizationId?: string): Promise<void> => {
+  requireOrgInProd(organizationId);
+
   if (!isValidObjectId(id)) {
     throw Object.assign(new Error('Invalid item ID'), { statusCode: 400 });
   }
 
+  const filter: Record<string, unknown> = { _id: id, isDeleted: { $ne: true } };
+  if (organizationId) filter.organizationId = organizationId;
+
   const result = await InventoryItem.findOneAndUpdate(
-    { _id: id, isDeleted: { $ne: true } },
+    filter,
     { $set: { isDeleted: true, deletedAt: new Date() } },
     { new: true },
   ).exec();
@@ -175,11 +148,17 @@ export const listItems = async (
   filter: InventoryFilter,
   pagination: PaginationQuery,
 ): Promise<{ items: IInventoryItemDocument[]; total: number; page: number; limit: number }> => {
+  requireOrgInProd(filter.organizationId);
+
   const page = pagination.page && pagination.page > 0 ? pagination.page : DEFAULT_PAGE;
   const limit = pagination.limit && pagination.limit > 0 ? pagination.limit : DEFAULT_LIMIT;
   const skip = (page - 1) * limit;
 
   const query: Record<string, unknown> = {};
+
+  if (filter.organizationId) {
+    query.organizationId = filter.organizationId;
+  }
 
   if (!filter.includeDeleted) {
     query.isDeleted = { $ne: true };
@@ -193,6 +172,12 @@ export const listItems = async (
   if (filter.location) {
     query.location = { $regex: filter.location, $options: 'i' };
   }
+
+  logger.info('shard.query', {
+    organizationId: filter.organizationId || null,
+    targeted: Boolean(filter.organizationId),
+    op: 'listItems',
+  });
 
   const [items, total] = await Promise.all([
     InventoryItem.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
@@ -363,14 +348,34 @@ export const getInventorySummary = async (threshold?: number) => {
   // Current summary is provided by analytics service and isn't threshold-specific.
   void threshold;
 
-  const cacheKey = 'analytics:inventory:summary';
+  const cacheKey = buildCacheKey('analytics:summary');
   const cached = await cacheGet<unknown>(cacheKey);
-  if (cached) return cached;
+  if (cached.value !== null) return cached.value;
 
   const summary = await fetchInventorySummary();
-  await cacheSet(cacheKey, summary);
+  await cacheSet(cacheKey, summary, ANALYTICS_CACHE_TTL_SECONDS);
 
   return summary;
+};
+
+export const getTrendingItemsCached = async (limit = 10) => {
+  const cacheKey = buildCacheKey('analytics:trending', { limit });
+  const cached = await cacheGet<unknown>(cacheKey);
+  if (cached.value !== null) return cached.value;
+
+  const items = await fetchTrendingItems(limit);
+  await cacheSet(cacheKey, items, ANALYTICS_CACHE_TTL_SECONDS);
+  return items;
+};
+
+export const getTopInventory = async (limit = 10) => {
+  const cacheKey = buildCacheKey('analytics:top', { limit });
+  const cached = await cacheGet<unknown>(cacheKey);
+  if (cached.value !== null) return cached.value;
+
+  const items = await fetchTopItems(limit);
+  await cacheSet(cacheKey, items, ANALYTICS_CACHE_TTL_SECONDS);
+  return items;
 };
 
 /**
@@ -417,30 +422,6 @@ export const getInventoryStats = async (): Promise<{
     totalValue: Number(row.totalValue) || 0,
     lowStockCount: Number(row.lowStockCount) || 0,
   };
-};
-
-/**
- * Top inventory items by value (quantity * price).
- */
-export const getTopInventory = async (limit = 10): Promise<IInventoryItemDocument[]> => {
-  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 100) : 10;
-
-  const ids = await InventoryItem.aggregate([
-    { $match: { isDeleted: { $ne: true } } },
-    { $addFields: { value: { $multiply: ['$quantity', '$price'] } } },
-    { $sort: { value: -1 } },
-    { $limit: safeLimit },
-    { $project: { _id: 1 } },
-  ]).exec();
-
-  const objectIds = ids.map((d: any) => d._id).filter(Boolean);
-  if (!objectIds.length) return [];
-
-  const docs = await InventoryItem.find({ _id: { $in: objectIds } }).exec();
-  const order = new Map(objectIds.map((id: any, idx: number) => [String(id), idx]));
-
-  // keep stable order
-  return docs.sort((a, b) => (order.get(String(a._id)) ?? 0) - (order.get(String(b._id)) ?? 0));
 };
 
 /**

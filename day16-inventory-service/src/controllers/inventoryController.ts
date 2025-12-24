@@ -14,9 +14,13 @@ import {
   restoreItem as restoreInventoryItem,
 } from '../services/inventoryService';
 import { validateInventoryInput } from '../utils/validators';
-import { InventoryLog } from '../models/InventoryLog';
+import type { ShardContext } from '../middleware/shardKey';
 
-export const createInventoryItem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const createInventoryItem = async (
+  req: Request & ShardContext,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
     const validation = validateInventoryInput(req.body);
     if (!validation.valid) {
@@ -24,7 +28,9 @@ export const createInventoryItem = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    const item = await createItem(req.body);
+    const organizationId = req.organizationId || (req.body as any).organizationId;
+
+    const item = await createItem({ ...req.body, organizationId } as any);
 
     res.status(201).json({ success: true, data: item });
   } catch (error) {
@@ -32,21 +38,26 @@ export const createInventoryItem = async (req: Request, res: Response, next: Nex
   }
 };
 
-export const listInventoryItems = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const listInventoryItems = async (
+  req: Request & ShardContext,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
     const { page, limit, productName, supplier, location, includeDeleted } = req.query;
 
     const result = await listItems(
       {
+        organizationId: req.organizationId,
         productName: productName as string | undefined,
         supplier: supplier as string | undefined,
         location: location as string | undefined,
         includeDeleted: includeDeleted === 'true',
-      },
+      } as any,
       {
         page: page ? parseInt(page as string, 10) : undefined,
         limit: limit ? parseInt(limit as string, 10) : undefined,
-      }
+      },
     );
 
     res.status(200).json({
@@ -63,27 +74,39 @@ export const listInventoryItems = async (req: Request, res: Response, next: Next
   }
 };
 
-export const getInventoryItem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getInventoryItem = async (
+  req: Request & ShardContext,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
-    const item = await getItemById(req.params.id);
+    const item = await getItemById(req.params.id, req.organizationId);
     res.status(200).json({ success: true, data: item });
   } catch (error) {
     next(error);
   }
 };
 
-export const updateInventoryItem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const updateInventoryItem = async (
+  req: Request & ShardContext,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
-    const item = await updateItem(req.params.id, req.body);
+    const item = await updateItem(req.params.id, req.body, req.organizationId);
     res.status(200).json({ success: true, data: item });
   } catch (error) {
     next(error);
   }
 };
 
-export const deleteInventoryItem = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const deleteInventoryItem = async (
+  req: Request & ShardContext,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
   try {
-    await deleteItem(req.params.id);
+    await deleteItem(req.params.id, req.organizationId);
     res.status(204).send();
   } catch (error) {
     next(error);

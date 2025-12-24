@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export type InventoryStatus = 'available' | 'reserved' | 'damaged' | 'sold';
 
 export interface IInventoryItem {
+  organizationId: string;
   productName: string;
   batchId?: string;
   sku?: string;
@@ -22,6 +23,12 @@ export interface IInventoryItemDocument extends IInventoryItem, Document {}
 
 const inventoryItemSchema = new Schema<IInventoryItemDocument>(
   {
+    organizationId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
     productName: {
       type: String,
       required: true,
@@ -86,5 +93,11 @@ const inventoryItemSchema = new Schema<IInventoryItemDocument>(
     timestamps: true,
   }
 );
+
+// Shard key index (hashed)
+inventoryItemSchema.index({ organizationId: 'hashed' });
+
+// Shard-friendly uniqueness (per tenant)
+inventoryItemSchema.index({ organizationId: 1, sku: 1 }, { unique: true, sparse: true });
 
 export const InventoryItem = mongoose.model<IInventoryItemDocument>('InventoryItem', inventoryItemSchema);

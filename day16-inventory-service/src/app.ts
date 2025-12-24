@@ -9,12 +9,14 @@ import featureRoutes from './routes/features';
 import { errorHandler } from './middlewares/errorHandler';
 import { httpLoggerStream } from './utils/logger';
 import mongoose from 'mongoose';
-import { randomUUID } from 'crypto';
 import './events/listeners';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
 import chaosRouter from './routes/chaos';
 import { chaosMiddleware } from './controllers/chaosController';
+import { shardKeyMiddleware } from './middleware/shardKey';
+import { getDbDegradedState } from './db';
+import { getCacheStats } from './utils/cache/cache';
 
 // simple in-memory metrics
 let totalRequests = 0;
@@ -61,6 +63,9 @@ app.use(
 // JSON body limit 100kb
 app.use(bodyParser.json({ limit: '100kb' }));
 
+// Shard key extraction (tenant routing)
+app.use(shardKeyMiddleware);
+
 // Chaos middleware (disabled by default; feature-flag protected)
 app.use(chaosMiddleware);
 
@@ -98,8 +103,14 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
+// Liveness: OK if read-only operations are possible.
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  const db = getDbDegradedState();
+  if (!db.canRead) {
+    res.status(503).json({ status: 'degraded', canRead: false, canWrite: false, db, uptime: process.uptime() });
+    return;
+  }
+  res.json({ status: 'ok', canRead: db.canRead, canWrite: db.canWrite, db, uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
 // Readiness gate: flipped off during SIGTERM shutdown to stop K8s routing traffic.
@@ -108,15 +119,22 @@ export const markShuttingDown = (): void => {
   isShuttingDown = true;
 };
 
+// Ready: inventory requires writes to be safe for mutations and queue workload.
 app.get('/ready', (_req: Request, res: Response) => {
   if (isShuttingDown) {
     res.status(503).json({ ready: false, shuttingDown: true });
     return;
   }
 
-  const state = mongoose.connection.readyState;
-  const ready = state === 1; // connected
-  res.status(ready ? 200 : 503).json({ ready, state });
+  const db = getDbDegradedState();
+  const ready = db.canWrite;
+
+  res.status(ready ? 200 : 503).json({
+    ready,
+    degraded: db.canRead && !db.canWrite,
+    db,
+    state: mongoose.connection.readyState,
+  });
 });
 
 app.get('/metrics', (_req: Request, res: Response) => {
@@ -126,6 +144,32 @@ app.get('/metrics', (_req: Request, res: Response) => {
     errorCount,
     avgResponseTimeMs: avgResponseTime,
   });
+});
+
+// Day 28 scale metrics (JSON)
+app.get('/metrics/ha', (_req: Request, res: Response) => {
+  const db = getDbDegradedState();
+  res.json({
+    service: 'inventory-service',
+    db: {
+      primaryAvailable: db.canWrite,
+      readOnlyAvailable: db.canRead,
+      failover: {
+        lastDisconnectedAt: db.lastDisconnectedAt,
+        lastReconnectedAt: db.lastReconnectedAt,
+        lastError: db.lastError,
+      },
+    },
+  });
+});
+
+app.get('/metrics/db', (_req: Request, res: Response) => {
+  const db = getDbDegradedState();
+  res.json({ service: 'inventory-service', ...db });
+});
+
+app.get('/metrics/cache', (_req: Request, res: Response) => {
+  res.json({ service: 'inventory-service', ...getCacheStats() });
 });
 
 // Swagger docs

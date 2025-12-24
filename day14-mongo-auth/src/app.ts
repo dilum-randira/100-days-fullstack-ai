@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import mongoose from 'mongoose';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
+import { getDbDegradedState } from './db';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -20,8 +21,13 @@ const app: Application = express();
 
 app.set('trust proxy', 1);
 
-app.use((req: Request & { requestId?: string }, _res: Response, next: NextFunction) => {
-  req.requestId = randomUUID();
+app.use((req: Request & { requestId?: string; correlationId?: string }, res: Response, next: NextFunction) => {
+  const requestId = (req.headers['x-request-id'] as string) || randomUUID();
+  const correlationId = (req.headers['x-correlation-id'] as string) || requestId;
+  req.requestId = requestId;
+  req.correlationId = correlationId;
+  res.setHeader('x-request-id', requestId);
+  res.setHeader('x-correlation-id', correlationId);
   next();
 });
 
@@ -102,8 +108,15 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
+// Liveness: OK if we can still serve some (read-only) operations.
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  const db = getDbDegradedState();
+  if (!db.canRead) {
+    // still do not crash; return "ok" with degraded=false? but keep it OK only if read-only ops are possible.
+    res.status(503).json({ status: 'degraded', canRead: false, canWrite: false, db, uptime: process.uptime() });
+    return;
+  }
+  res.json({ status: 'ok', canRead: db.canRead, canWrite: db.canWrite, db, uptime: process.uptime(), timestamp: new Date().toISOString() });
 });
 
 // Readiness gate: set to false when SIGTERM shutdown begins
@@ -112,19 +125,59 @@ export const markShuttingDown = (): void => {
   isShuttingDown = true;
 };
 
+// Ready: must be able to write (i.e., primary reachable) for auth to be considered ready.
 app.get('/ready', (_req: Request, res: Response) => {
   if (isShuttingDown) {
     res.status(503).json({ ready: false, shuttingDown: true });
     return;
   }
-  const state = mongoose.connection.readyState;
-  const ready = state === 1;
-  res.status(ready ? 200 : 503).json({ ready, state });
+
+  const db = getDbDegradedState();
+  const ready = db.canWrite;
+
+  res.status(ready ? 200 : 503).json({
+    ready,
+    degraded: db.canRead && !db.canWrite,
+    db,
+    mongooseState: mongoose.connection.readyState,
+  });
 });
 
 app.get('/metrics', (_req: Request, res: Response) => {
   const avgResponseTime = totalRequests ? totalResponseTimeMs / totalRequests : 0;
   res.json({ totalRequests, errorCount, avgResponseTimeMs: avgResponseTime });
+});
+
+// Day 28 scale metrics (JSON):
+app.get('/metrics/ha', (_req: Request, res: Response) => {
+  const db = getDbDegradedState();
+  res.json({
+    service: 'auth-service',
+    db: {
+      primaryAvailable: db.canWrite,
+      readOnlyAvailable: db.canRead,
+      failover: {
+        lastDisconnectedAt: db.lastDisconnectedAt,
+        lastReconnectedAt: db.lastReconnectedAt,
+        lastError: db.lastError,
+      },
+    },
+  });
+});
+
+app.get('/metrics/db', (_req: Request, res: Response) => {
+  const db = getDbDegradedState();
+  res.json({ service: 'auth-service', ...db });
+});
+
+app.get('/metrics/cache', (_req: Request, res: Response) => {
+  // auth service intentionally disables caching; still expose endpoint for uniform dashboards.
+  res.json({
+    service: 'auth-service',
+    l1: { hits: 0, misses: 0 },
+    l2: { hits: 0, misses: 0 },
+    note: 'auth-service caching disabled by design',
+  });
 });
 
 // Swagger docs
