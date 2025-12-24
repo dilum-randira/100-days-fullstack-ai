@@ -13,6 +13,7 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/swagger';
 import { getDbDegradedState } from './db';
 import { getDbRouterMetrics } from './db/router';
+import { adaptiveRateLimit, getAdaptiveRateLimitState } from './middleware/adaptiveRateLimit';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -194,5 +195,13 @@ app.use('/api/auth', authRoutes);
 app.use('/api', protectedRoutes);
 
 app.use(errorHandler);
+
+// Adaptive rate limiting (works alongside any existing static rate limiters).
+app.use(adaptiveRateLimit());
+
+// Observability: adaptive limiter state
+app.get('/metrics/limits', (_req: Request, res: Response) => {
+  res.json({ service: 'auth-service', ...getAdaptiveRateLimitState() });
+});
 
 export default app;

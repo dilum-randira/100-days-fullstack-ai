@@ -1,0 +1,158 @@
+import { NextFunction, Request, Response } from 'express';
+
+export type LimitTier = 'normal' | 'tight' | 'severe';
+
+type Rolling = { count: number; startedAtMs: number };
+
+type AdaptiveState = {
+  tier: LimitTier;
+  lastTierChangeAtMs: number;
+  windowMs: number;
+  req: Rolling;
+  err5xx: Rolling;
+  latency: { sumMs: number; samples: number; startedAtMs: number };
+  groupReq: Record<string, Rolling>;
+  decisions: { allowed: number; blocked: number };
+};
+
+const state: AdaptiveState = {
+  tier: 'normal',
+  lastTierChangeAtMs: Date.now(),
+  windowMs: 10_000,
+  req: { count: 0, startedAtMs: Date.now() },
+  err5xx: { count: 0, startedAtMs: Date.now() },
+  latency: { sumMs: 0, samples: 0, startedAtMs: Date.now() },
+  groupReq: {},
+  decisions: { allowed: 0, blocked: 0 },
+};
+
+const resetRolling = (r: Rolling): void => {
+  r.count = 0;
+  r.startedAtMs = Date.now();
+};
+
+const getRollingRatePerSec = (r: Rolling): number => {
+  const elapsedMs = Math.max(1, Date.now() - r.startedAtMs);
+  return (r.count / elapsedMs) * 1000;
+};
+
+const getAvgLatencyMs = (): number => {
+  const elapsedMs = Date.now() - state.latency.startedAtMs;
+  if (elapsedMs > state.windowMs) {
+    state.latency.sumMs = 0;
+    state.latency.samples = 0;
+    state.latency.startedAtMs = Date.now();
+    return 0;
+  }
+  return state.latency.samples ? state.latency.sumMs / state.latency.samples : 0;
+};
+
+const normalizeGroup = (path: string): 'heavy' | 'default' | 'admin' => {
+  const p = path.toLowerCase();
+  // Exclude admin-ish endpoints (none explicitly in gateway, but keep future-safe)
+  if (p.startsWith('/internal') || p.startsWith('/admin')) return 'admin';
+  if (p.startsWith('/api/analytics')) return 'heavy';
+  return 'default';
+};
+
+const ensureGroup = (g: string): Rolling => {
+  if (!state.groupReq[g]) state.groupReq[g] = { count: 0, startedAtMs: Date.now() };
+  return state.groupReq[g];
+};
+
+const computeTier = (): LimitTier => {
+  if (Date.now() - state.req.startedAtMs > state.windowMs) resetRolling(state.req);
+  if (Date.now() - state.err5xx.startedAtMs > state.windowMs) resetRolling(state.err5xx);
+
+  const rps = getRollingRatePerSec(state.req);
+  const errRps = getRollingRatePerSec(state.err5xx);
+  const avgLatency = getAvgLatencyMs();
+  const errRate = state.req.count ? state.err5xx.count / state.req.count : 0;
+
+  if (avgLatency >= 1200 || errRate >= 0.15 || errRps >= 2) return 'severe';
+  if (avgLatency >= 700 || errRate >= 0.07 || rps >= 40) return 'tight';
+  return 'normal';
+};
+
+const tierLimits = (tier: LimitTier) => {
+  switch (tier) {
+    case 'severe':
+      return { default: 120, heavy: 40 };
+    case 'tight':
+      return { default: 220, heavy: 80 };
+    default:
+      return { default: 320, heavy: 120 };
+  }
+};
+
+const maybeChangeTier = (): void => {
+  const next = computeTier();
+  if (next === state.tier) return;
+  const sinceMs = Date.now() - state.lastTierChangeAtMs;
+  if (sinceMs < 2500) return;
+  state.tier = next;
+  state.lastTierChangeAtMs = Date.now();
+};
+
+export const getAdaptiveRateLimitState = () => {
+  const limits = tierLimits(state.tier);
+  return {
+    tier: state.tier,
+    windowMs: state.windowMs,
+    limits,
+    telemetry: {
+      rps: Number(getRollingRatePerSec(state.req).toFixed(2)),
+      errorRate: state.req.count ? Number((state.err5xx.count / state.req.count).toFixed(4)) : 0,
+      avgLatencyMs: Number(getAvgLatencyMs().toFixed(2)),
+      reqCountWindow: state.req.count,
+      err5xxCountWindow: state.err5xx.count,
+    },
+    decisions: { ...state.decisions },
+  };
+};
+
+export const adaptiveRateLimit = () => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const group = normalizeGroup(req.path);
+    if (group === 'admin') {
+      next();
+      return;
+    }
+
+    const start = Date.now();
+    state.req.count += 1;
+    maybeChangeTier();
+
+    const limits = tierLimits(state.tier);
+    const rolling = ensureGroup(group);
+    if (Date.now() - rolling.startedAtMs > state.windowMs) resetRolling(rolling);
+    rolling.count += 1;
+
+    const limit = group === 'heavy' ? limits.heavy : limits.default;
+
+    if (rolling.count > limit) {
+      state.decisions.blocked += 1;
+      const retryAfterSeconds = Math.max(1, Math.ceil((state.windowMs - (Date.now() - rolling.startedAtMs)) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      res.status(429).json({
+        success: false,
+        error: 'TooManyRequests',
+        message: 'Rate limit exceeded',
+        limitState: { tier: state.tier, windowMs: state.windowMs, group, limit },
+      });
+      return;
+    }
+
+    state.decisions.allowed += 1;
+
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      state.latency.sumMs += duration;
+      state.latency.samples += 1;
+      if (res.statusCode >= 500) state.err5xx.count += 1;
+      maybeChangeTier();
+    });
+
+    next();
+  };
+};
