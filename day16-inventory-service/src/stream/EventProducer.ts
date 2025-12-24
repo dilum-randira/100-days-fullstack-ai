@@ -144,7 +144,7 @@ export class EventProducer {
       }
       state.localQueue.push({ topic: 'domain-events', event });
 
-      return { ok: false, error: state.lastError };
+      return { ok: false, error: state.lastError ?? 'publish_failed' };
     }
   }
 }

@@ -92,13 +92,17 @@ export class EventConsumer {
   }
 }
 
-export const getStreamConsumerMetrics = (groupId: string): Pick<StreamMetrics, 'consumedTotal' | 'consumedPerSec' | 'consumerLag' | 'deadLetteredTotal' | 'failedEventsCount' | 'lastError'> | any => {
+export const getStreamConsumerMetrics = (
+  groupId: string,
+): Pick<StreamMetrics, 'consumedTotal' | 'consumedPerSec' | 'consumerLag' | 'deadLetteredTotal' | 'lastError'> & {
+  failedTotal: number;
+} => {
   return {
     consumedTotal: state.consumedTotal,
     consumedPerSec: state.consumedInWindow,
     consumerLag: inMemoryStream.getLag(groupId),
     deadLetteredTotal: state.deadLetteredTotal,
-    failedEventsCount: state.failedTotal,
+    failedTotal: state.failedTotal,
     lastError: state.lastError,
   };
 };
