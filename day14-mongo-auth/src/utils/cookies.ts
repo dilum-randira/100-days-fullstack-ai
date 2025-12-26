@@ -7,7 +7,7 @@ export const getRefreshCookieOptions = (nodeEnv: string | undefined): CookieOpti
   return {
     httpOnly: true,
     secure: isProd, // Secure only in prod (requires HTTPS)
-    sameSite: isProd ? 'strict' : 'lax',
+    sameSite: 'strict',
     path: '/api',
     // No explicit maxAge: keep as session cookie to avoid persistent token theft via disk.
   };

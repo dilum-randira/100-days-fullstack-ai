@@ -8,8 +8,9 @@ const getActorId = (req: Request): string | undefined => {
   return (req as any).user?.id || (req.headers['x-user-id'] as string | undefined);
 };
 
-export const freezeGuard = (opts?: { allowListPaths?: string[] }) => {
+export const freezeGuard = (opts?: { allowListPaths?: string[]; retryAfterSeconds?: number }) => {
   const allow = new Set(opts?.allowListPaths || []);
+  const retryAfterSeconds = Math.max(1, Math.floor(opts?.retryAfterSeconds ?? 30));
 
   return async (req: Request & { requestId?: string; correlationId?: string }, res: Response, next: NextFunction) => {
     // Only block writes
@@ -30,11 +31,14 @@ export const freezeGuard = (opts?: { allowListPaths?: string[] }) => {
       return;
     }
 
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+
     const log = withRequestContext(req.requestId, req.correlationId);
     log.warn('system.freeze.block_write', {
       actorId: getActorId(req),
       method: req.method,
       path: req.path,
+      timestamp: new Date().toISOString(),
     });
 
     res.status(503).json({

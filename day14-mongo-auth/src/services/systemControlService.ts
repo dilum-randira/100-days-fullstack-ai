@@ -91,6 +91,29 @@ export const killFeature = async (feature: string): Promise<SystemControlSnapsho
   return snap;
 };
 
+export const enableFeature = async (feature: string): Promise<SystemControlSnapshot> => {
+  const f = String(feature || '').trim();
+  if (!f) return getSystemControl({ bypassCache: true });
+
+  await ensureDoc();
+  const doc = await SystemControl.findOneAndUpdate(
+    { key: CONTROL_KEY },
+    { $pull: { killedFeatures: f } },
+    { new: true, upsert: true },
+  )
+    .lean()
+    .exec();
+
+  const snap: SystemControlSnapshot = {
+    frozen: Boolean(doc?.frozen),
+    killed: new Set((doc?.killedFeatures || []).map((s: string) => String(s))),
+    updatedAt: doc?.updatedAt ? new Date(doc.updatedAt) : undefined,
+  };
+
+  cache = { snapshot: snap, fetchedAtMs: Date.now() };
+  return snap;
+};
+
 export const isFeatureKilled = async (feature: string): Promise<boolean> => {
   const snap = await getSystemControl();
   return snap.killed.has(feature);

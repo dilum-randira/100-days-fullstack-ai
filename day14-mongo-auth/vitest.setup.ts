@@ -1,6 +1,10 @@
+import dotenv from 'dotenv';
+import path from 'path';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { config as appConfig } from './config';
+
+dotenv.config({ path: path.resolve(__dirname, '..', '.env.test') });
+dotenv.config({ path: path.resolve(__dirname, '.env.test') });
 
 let mongoServer: MongoMemoryServer | null = null;
 
@@ -12,9 +16,16 @@ export const setupTestDB = async (): Promise<void> => {
 };
 
 export const teardownTestDB = async (): Promise<void> => {
-  if (mongoServer) {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-    mongoServer = null;
+  try {
+    // Drop the DB so tests are repeatable and isolated
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.dropDatabase();
+    }
+  } finally {
+    if (mongoServer) {
+      await mongoose.disconnect();
+      await mongoServer.stop();
+      mongoServer = null;
+    }
   }
 };

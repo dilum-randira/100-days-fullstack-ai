@@ -4,6 +4,7 @@ import { config } from '../config';
 export interface TokenPayload {
   id: string;
   email: string;
+  role?: string;
 }
 
 export type RefreshTokenPayload = TokenPayload & {
