@@ -15,12 +15,23 @@ import { getDbDegradedState } from './db';
 import { getDbRouterMetrics } from './db/router';
 import { adaptiveRateLimit, getAdaptiveRateLimitState } from './middleware/adaptiveRateLimit';
 import { idempotency } from './middleware/idempotency';
+import cookieParser from 'cookie-parser';
+import { sanitizeRequest } from './middleware/sanitize';
+import { perfProfiler } from './middleware/perfProfiler';
+import { perfContextMiddleware } from './middleware/perfContextMiddleware';
+import perfRoutes from './routes/perf';
+import { perfContext } from './perf/perfContext';
+import { enableMongooseProfiling, setPerfContextGetter } from './perf/mongooseProfiler';
 
 let totalRequests = 0;
 let errorCount = 0;
 let totalResponseTimeMs = 0;
 
 const app: Application = express();
+
+// enable DB profiling (query timings)
+setPerfContextGetter(() => perfContext.getStore());
+enableMongooseProfiling({ slowQueryMs: 300 });
 
 app.set('trust proxy', 1);
 
@@ -33,6 +44,9 @@ app.use((req: Request & { requestId?: string; correlationId?: string }, res: Res
   res.setHeader('x-correlation-id', correlationId);
   next();
 });
+
+// bind request context for db profiling logs
+app.use(perfContextMiddleware());
 
 app.disable('x-powered-by');
 app.use(helmet());
@@ -65,8 +79,16 @@ app.use(
   }),
 );
 
+app.use(cookieParser());
+
 // JSON body limit 100kb
 app.use(bodyParser.json({ limit: '100kb' }));
+
+// Prevent NoSQL injection / operator injection in body + query
+app.use(sanitizeRequest());
+
+// Request handler profiling
+app.use(perfProfiler({ slowMs: 300 }));
 
 // disable caching for auth responses
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -183,6 +205,9 @@ app.get('/metrics/cache', (_req: Request, res: Response) => {
     note: 'auth-service caching disabled by design',
   });
 });
+
+// Perf metrics
+app.use('/metrics', perfRoutes);
 
 // Swagger docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
