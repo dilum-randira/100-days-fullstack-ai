@@ -22,6 +22,9 @@ import { perfContextMiddleware } from './middleware/perfContextMiddleware';
 import perfRoutes from './routes/perf';
 import { perfContext } from './perf/perfContext';
 import { enableMongooseProfiling, setPerfContextGetter } from './perf/mongooseProfiler';
+import systemRoutes from './routes/system';
+import { freezeGuard } from './middleware/freezeGuard';
+import { killSwitch } from './middleware/featureKillSwitch';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -229,5 +232,25 @@ app.use(adaptiveRateLimit());
 app.get('/metrics/limits', (_req: Request, res: Response) => {
   res.json({ service: 'auth-service', ...getAdaptiveRateLimitState() });
 });
+
+// Kill-switch framework (dynamic)
+app.use(
+  killSwitch({
+    'auth.register': (req) => req.path.endsWith('/register') && req.method === 'POST',
+    'auth.login': (req) => req.path.endsWith('/login') && req.method === 'POST',
+    'auth.refresh': (req) => req.path.endsWith('/refresh') && req.method === 'POST',
+    'auth.logout': (req) => req.path.endsWith('/logout') && req.method === 'POST',
+  }),
+);
+
+// Global freeze (blocks all writes)
+app.use(
+  freezeGuard({
+    allowListPaths: ['/api/system'],
+  }),
+);
+
+// System controls (admin-only)
+app.use('/api/system', systemRoutes);
 
 export default app;

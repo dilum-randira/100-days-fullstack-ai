@@ -18,7 +18,9 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
     req.user = {
       id: payload.id,
       email: payload.email,
-    };
+      // role is best-effort; some tokens may not include it.
+      role: (payload as any).role,
+    } as any;
     next();
   } catch (error) {
     logSuspicious(req as any, 'security.access.invalid_token');
