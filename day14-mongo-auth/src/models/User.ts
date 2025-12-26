@@ -4,6 +4,9 @@ export interface IUser {
   name: string;
   email: string;
   passwordHash: string;
+  // Used to invalidate refresh sessions after password changes.
+  passwordVersion?: number;
+  refreshInvalidBefore?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -29,6 +32,15 @@ const userSchema = new Schema<IUserDocument>(
     passwordHash: {
       type: String,
       required: true,
+    },
+    passwordVersion: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    refreshInvalidBefore: {
+      type: Date,
+      required: false,
     },
   },
   {

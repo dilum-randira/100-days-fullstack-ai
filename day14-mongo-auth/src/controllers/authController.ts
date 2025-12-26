@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { registerUser, loginUser, refreshTokens, logout } from '../services/authService';
 import { validateRegisterInput } from '../utils/validateUserInput';
+import { LoginAttempt } from '../models/LoginAttempt';
+import { setRefreshCookie, clearRefreshCookie } from '../utils/cookies';
+import { logSuspicious, getClientIp } from '../utils/securityLog';
+
+const normEmail = (v: unknown): string => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -13,6 +18,9 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     }
 
     const { user, tokens } = await registerUser({ name, email, password });
+
+    // Also set cookie (non-breaking: response still includes refreshToken as before)
+    setRefreshCookie(res, tokens.refreshToken, process.env.NODE_ENV);
 
     res.status(201).json({
       success: true,
@@ -32,10 +40,21 @@ export const register = async (req: Request, res: Response, next: NextFunction):
 };
 
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const email = normEmail((req.body as any)?.email);
+  const ip = getClientIp(req);
+
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
 
     const { user, tokens } = await loginUser({ email, password });
+
+    // clear login attempts on success
+    if (email) {
+      const key = `login:${email}:${ip}`;
+      await LoginAttempt.deleteOne({ key }).exec();
+    }
+
+    setRefreshCookie(res, tokens.refreshToken, process.env.NODE_ENV);
 
     res.status(200).json({
       success: true,
@@ -49,32 +68,46 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         tokens,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    // suspicious login failure (bruteforce)
+    if (email) {
+      logSuspicious(req as any, 'security.login.failed', { email, ip, reason: error?.message || 'unknown' });
+    }
     next(error);
   }
 };
 
 export const refresh = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { refreshToken } = req.body;
+    // Backward compatible: accept refreshToken from body; fallback to cookie
+    const bodyToken = (req.body as any)?.refreshToken as string | undefined;
+    const cookieToken = (req as any).cookies?.refreshToken as string | undefined;
+    const refreshToken = bodyToken || cookieToken;
 
-    const tokens = await refreshTokens(refreshToken);
+    const tokens = await refreshTokens(String(refreshToken || ''));
+
+    setRefreshCookie(res, tokens.refreshToken, process.env.NODE_ENV);
 
     res.status(200).json({
       success: true,
       message: 'Tokens refreshed successfully',
       data: tokens,
     });
-  } catch (error) {
+  } catch (error: any) {
+    logSuspicious(req as any, 'security.refresh.failed', { reason: error?.message || 'unknown' });
     next(error);
   }
 };
 
 export const logoutHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { refreshToken } = req.body;
+    const bodyToken = (req.body as any)?.refreshToken as string | undefined;
+    const cookieToken = (req as any).cookies?.refreshToken as string | undefined;
+    const refreshToken = bodyToken || cookieToken;
 
-    await logout(refreshToken);
+    await logout(String(refreshToken || ''));
+
+    clearRefreshCookie(res, process.env.NODE_ENV);
 
     res.status(200).json({
       success: true,
