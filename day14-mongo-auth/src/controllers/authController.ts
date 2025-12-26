@@ -4,8 +4,7 @@ import { validateRegisterInput } from '../utils/validateUserInput';
 import { LoginAttempt } from '../models/LoginAttempt';
 import { setRefreshCookie, clearRefreshCookie } from '../utils/cookies';
 import { logSuspicious, getClientIp } from '../utils/securityLog';
-
-const normEmail = (v: unknown): string => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+import { normalizeEmail } from '../perf/optimize';
 
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -40,7 +39,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
 };
 
 export const login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const email = normEmail((req.body as any)?.email);
+  const email = normalizeEmail((req.body as any)?.email);
   const ip = getClientIp(req);
 
   try {

@@ -1,7 +1,9 @@
 import { User, IUserDocument } from '../models/User';
+import { normalizeEmail } from '../perf/optimize';
 
 export const findUserByEmail = async (email: string): Promise<IUserDocument | null> => {
-  return User.findOne({ email }).exec();
+  const normalized = normalizeEmail(email);
+  return User.findOne({ email: normalized }).exec();
 };
 
 export const findUserById = async (id: string): Promise<IUserDocument | null> => {
