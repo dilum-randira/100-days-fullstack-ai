@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "start:prod": "node dist/server.js",
-    "check:health": "curl -f http://localhost:${PORT:-4000}/health || exit 1"
+    "check:health": "curl -f http://localhost:${PORT:-4000}/health || exit 1",
+    "migrate": "ts-node-dev --transpile-only src/migrations/cli.ts up",
+    "migrate:rollback": "ts-node-dev --transpile-only src/migrations/cli.ts rollback"
   },
   "keywords": [
     "nodejs",
@@ -46,6 +48,10 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.19.27",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "mongodb-memory-server": "^10.2.3",
+    "supertest": "^7.1.4",
+    "@types/supertest": "^6.0.3",
+    "vitest": "^2.1.9"
   }
 }
