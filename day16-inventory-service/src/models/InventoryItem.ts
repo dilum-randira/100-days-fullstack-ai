@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { addSchemaVersionToSchema, assertLatestOnWrite, getSchemaVersion, logDeprecatedRead, LATEST_SCHEMA_VERSION } from './schemaVersion';
 
 export type InventoryStatus = 'available' | 'reserved' | 'damaged' | 'sold';
 
@@ -17,6 +18,7 @@ export interface IInventoryItem {
   deletedAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
+  schemaVersion?: number;
 }
 
 export interface IInventoryItemDocument extends IInventoryItem, Document {}
@@ -93,6 +95,36 @@ const inventoryItemSchema = new Schema<IInventoryItemDocument>(
     timestamps: true,
   }
 );
+
+addSchemaVersionToSchema(inventoryItemSchema);
+
+inventoryItemSchema.pre('validate', function (next) {
+  try {
+    assertLatestOnWrite('InventoryItem', this as any, LATEST_SCHEMA_VERSION);
+    next();
+  } catch (err) {
+    next(err as any);
+  }
+});
+
+inventoryItemSchema.post(['init', 'find', 'findOne', 'findOneAndUpdate', 'save'] as any, function (docs: any) {
+  const normalizeOne = (doc: any) => {
+    if (!doc) return;
+    const v = getSchemaVersion(doc);
+    if (v < LATEST_SCHEMA_VERSION) {
+      logDeprecatedRead('InventoryItem', doc._id, v, LATEST_SCHEMA_VERSION, {
+        organizationId: doc.organizationId || undefined,
+      });
+      doc.schemaVersion = LATEST_SCHEMA_VERSION;
+    }
+  };
+
+  if (Array.isArray(docs)) {
+    for (const d of docs) normalizeOne(d);
+  } else {
+    normalizeOne(docs);
+  }
+});
 
 // Shard key index (hashed)
 inventoryItemSchema.index({ organizationId: 'hashed' });
