@@ -230,3 +230,4 @@ curl -X POST http://localhost:3000/api/v1/inventory \
   -H "Content-Type: application/json" \
   -d '{"productName":"Sample","location":"Main","quantity":10,"unit":"pcs","minThreshold":2}'
 ```
+hsgf iwuid duao
