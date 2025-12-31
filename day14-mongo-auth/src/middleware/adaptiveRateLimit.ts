@@ -68,7 +68,17 @@ const ensureGroup = (g: string): Rolling => {
   return state.groupReq[g];
 };
 
+let overrideTier: LimitTier | null = null;
+
+export const setAdaptiveTierOverride = (tier: LimitTier | null): void => {
+  overrideTier = tier;
+};
+
+export const getAdaptiveTierOverride = (): LimitTier | null => overrideTier;
+
 const computeTier = (): LimitTier => {
+  if (overrideTier) return overrideTier;
+
   // reset windows if necessary
   if (Date.now() - state.req.startedAtMs > state.windowMs) resetRolling(state.req);
   if (Date.now() - state.err5xx.startedAtMs > state.windowMs) resetRolling(state.err5xx);

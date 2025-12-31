@@ -25,6 +25,9 @@ import { enableMongooseProfiling, setPerfContextGetter } from './perf/mongoosePr
 import systemRoutes from './routes/system';
 import { freezeGuard } from './middleware/freezeGuard';
 import { killSwitch } from './middleware/featureKillSwitch';
+import { sreEnforce } from './sre/enforce';
+import sloRoutes from './sre/routes';
+import { sreMiddleware } from './sre/sreMiddleware';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -252,5 +255,14 @@ app.use(
 
 // System controls (admin-only)
 app.use('/api/system', systemRoutes);
+
+// attach SRE collector middleware after perf profiler to get request timing
+app.use(sreMiddleware());
+
+// SRE enforcement (blocks non-critical writes when error budget exhausted)
+app.use(sreEnforce('authService'));
+
+// Observability: SLO / Error budget endpoints
+app.use('/metrics', sloRoutes);
 
 export default app;
