@@ -28,6 +28,8 @@ import { killSwitch } from './middleware/featureKillSwitch';
 import { sreEnforce } from './sre/enforce';
 import sloRoutes from './sre/routes';
 import { sreMiddleware } from './sre/sreMiddleware';
+import alertRoutes from './alerts/routes';
+import { startAlertEngine } from './alerts/engine';
 
 let totalRequests = 0;
 let errorCount = 0;
@@ -264,5 +266,10 @@ app.use(sreEnforce('authService'));
 
 // Observability: SLO / Error budget endpoints
 app.use('/metrics', sloRoutes);
+
+// start internal alerting engine (in-memory)
+startAlertEngine();
+
+app.use('/api/alerts', alertRoutes);
 
 export default app;
